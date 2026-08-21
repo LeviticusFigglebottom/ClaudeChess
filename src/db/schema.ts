@@ -15,6 +15,7 @@ import {
   pgTable,
   primaryKey,
   real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -256,6 +257,17 @@ export const plies = pgTable(
 
     /** Variant-specific state (check counts, pockets, ...); null for standard (A1.4). */
     variantStateJson: jsonb("variant_state_json").$type<Record<string, unknown>>(),
+
+    /**
+     * Syzygy tablebase truth for ≤7-piece positions (B0.1), populated by the
+     * Phase 2 probe. evalAfterCp is NEVER overwritten from tablebase data —
+     * classification and win-prob consult these when tbHit; the eval graph
+     * marks the region instead of jumping values. Standard-only.
+     */
+    tbWdl: smallint("tb_wdl"),
+    tbDtz: integer("tb_dtz"),
+    tbHit: boolean("tb_hit").notNull().default(false),
+    tbProbedAt: timestamp("tb_probed_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("plies_game_ply_idx").on(table.gameId, table.ply),
