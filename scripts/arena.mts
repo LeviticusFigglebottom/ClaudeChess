@@ -98,6 +98,10 @@ interface GameRecord {
   moves: number;
   blunderAvailable: number;
   byKind: { random: number; blunder: number; sampled: number };
+  /** Moves that actually reached the blunder branch (pRandom didn't consume them). */
+  branchMoves: number;
+  /** Availability among branch-reaching moves — the conditional rate to report. */
+  branchAvailable: number;
 }
 
 type Mover =
@@ -154,6 +158,8 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
   let score = -1;
   let botMoves = 0;
   let blunderAvailableCount = 0;
+  let branchMoves = 0;
+  let branchAvailable = 0;
   const byKind = { random: 0, blunder: 0, sampled: 0 };
 
   const finish = (s: number, reason: string): void => {
@@ -233,6 +239,10 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
         botMoves++;
         if (choice.blunderAvailable) blunderAvailableCount++;
         byKind[choice.kind]++;
+        if (choice.kind !== "random") {
+          branchMoves++;
+          if (choice.blunderAvailable) branchAvailable++;
+        }
       }
       uci = choice?.uci ?? deep.bestmove;
     }
@@ -266,6 +276,8 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
     moves: botMoves,
     blunderAvailable: blunderAvailableCount,
     byKind,
+    branchMoves,
+    branchAvailable,
   };
 }
 

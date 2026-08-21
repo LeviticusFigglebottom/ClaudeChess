@@ -33,6 +33,7 @@ npx tsx scripts/calibrate-fit.mts --propose|--finalize   # fit → bot-calibrati
 7. **Original trainers ship flag-gated, default off** (`src/lib/flags`, spec §9).
 8. **Cross-origin isolation must hold** (`next.config.ts` COOP/COEP). Any new external resource must be self-hosted or proxied. If `/engine-check` shows red on a deploy, fix that before feature work.
 9. **Glicko-2 updates are batched per rating period** (12 games / 7 days), never per game (spec §7).
+10. **Rating pools never blend** (Phase 2): GAMBIT's Glicko lives on the Stockfish UCI_Elo scale (that's what the bots are calibrated against); imported chess.com and Lichess ratings are two *other* pools. Any UI showing more than one labels each with its pool — never average, compare, or convert between them.
 10. **Engine binaries are vendored** (`public/engine/`, committed). No build or install step may fetch them (A0.1). GPL notices: `NOTICE` + `/licenses` — update both when engine or rules deps change.
 
 ## Layout facts

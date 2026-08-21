@@ -36,14 +36,20 @@ export interface SearchSettings {
   multipv: number;
 }
 
-/** Revision (a) + (b): per-band search shapes. Shallow is fixed at all bands. */
+/**
+ * Revisions (a) + (b), amended after the sweep-1 availability finding:
+ * pinning the shallow pass at depth 6 narrowed the shallow/truth gap to 8
+ * plies exactly at the low bands, which need the widest gap. The shallow
+ * pass now keeps a constant 12-ply gap (floor 2) and its MultiPV scales
+ * with band like the truth pass — an intersection bounded by 5 shallow
+ * candidates could never exceed 5.
+ */
 export function bandSearchSettings(rating: number): { shallow: SearchSettings; deep: SearchSettings } {
+  const multipv = clamp(Math.round(24 - (rating - 600) / 100), 4, 24);
+  const truthDepth = rating < 1600 ? 14 : 18;
   return {
-    shallow: { depth: 6, multipv: 5 },
-    deep: {
-      depth: rating < 1600 ? 14 : 18,
-      multipv: clamp(Math.round(24 - (rating - 600) / 100), 4, 24),
-    },
+    shallow: { depth: Math.max(2, truthDepth - 12), multipv },
+    deep: { depth: truthDepth, multipv },
   };
 }
 

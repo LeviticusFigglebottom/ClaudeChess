@@ -40,14 +40,18 @@ describe("revised per-band search shapes (revision a+b)", () => {
     expect(bandSearchSettings(0).deep.multipv).toBe(24);
   });
 
-  it("truth depth is 14 below 1600, 18 at or above; shallow fixed at d6 MPV5", () => {
+  it("truth depth is 14 below 1600, 18 at or above", () => {
     expect(bandSearchSettings(600).deep.depth).toBe(14);
     expect(bandSearchSettings(1400).deep.depth).toBe(14);
     expect(bandSearchSettings(1600).deep.depth).toBe(18);
     expect(bandSearchSettings(2200).deep.depth).toBe(18);
-    for (const rating of [600, 1400, 2200]) {
-      expect(bandSearchSettings(rating).shallow).toEqual({ depth: 6, multipv: 5 });
-    }
+  });
+
+  it("shallow keeps a 12-ply gap (floor 2) and mirrors the truth MultiPV", () => {
+    expect(bandSearchSettings(600).shallow).toEqual({ depth: 2, multipv: 24 });
+    expect(bandSearchSettings(1400).shallow).toEqual({ depth: 2, multipv: 16 });
+    expect(bandSearchSettings(1600).shallow).toEqual({ depth: 6, multipv: 14 });
+    expect(bandSearchSettings(2200).shallow).toEqual({ depth: 6, multipv: 8 });
   });
 });
 

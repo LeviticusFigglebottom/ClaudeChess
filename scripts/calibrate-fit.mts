@@ -89,9 +89,26 @@ if (mode === "propose") {
     );
   }
 
-  // Invert: for each target nominal, find r* with measuredCurve(r*) = target.
-  // Piecewise-linear in the probe points; linear extrapolation at the ends.
-  const invert = (target: number): number => {
+  // Shift-first fit: the probe deltas look like a near-constant offset, so
+  // model measured(r) = r + c and re-center the R input; add curvature only
+  // if residuals demand it (fall back to piecewise inversion then).
+  // Shutout matches (score 0 or 1) carry no point estimate and are excluded.
+  const informative = points.filter((point) => point.measured > 200 && point.measured < 3100);
+  const shift =
+    informative.reduce((sum, point) => sum + (point.measured - point.formulaRating), 0) /
+    informative.length;
+  const residuals = informative.map((point) => ({
+    band: point.formulaRating,
+    residual: Math.round(point.measured - point.formulaRating - shift),
+  }));
+  const maxResidual = Math.max(...residuals.map((r) => Math.abs(r.residual)));
+  console.log(
+    `\nconstant-shift fit: measured ≈ r + ${Math.round(shift)}; residuals ${residuals
+      .map((r) => `${r.band}:${r.residual >= 0 ? "+" : ""}${r.residual}`)
+      .join(" ")} (max |${maxResidual}|)`
+  );
+
+  const piecewiseInvert = (target: number): number => {
     for (let i = 0; i < points.length - 1; i++) {
       const a = points[i]!;
       const b = points[i + 1]!;
@@ -111,6 +128,13 @@ if (mode === "propose") {
     const slope = (last.formulaRating - secondLast.formulaRating) / (last.measured - secondLast.measured || 1);
     return last.formulaRating + (target - last.measured) * slope;
   };
+
+  const useShift = maxResidual <= 60;
+  if (!useShift) {
+    console.log("residuals exceed 60 — using piecewise inversion (curvature demanded)");
+  }
+  const invert = (target: number): number =>
+    useShift ? target - shift : piecewiseInvert(target);
 
   const proposal: Record<string, { pBlunder: number; temperature: number; formulaEquivalent: number }> = {};
   for (const band of BANDS) {
