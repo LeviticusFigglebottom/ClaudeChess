@@ -6,16 +6,20 @@ Read `docs/SPEC.md` and `docs/ADDENDUM_A.md` before changing anything. They gove
 
 ```bash
 npm run dev              # dev server (localhost:3000)
-npm test                 # vitest — 92 tests incl. chessops⇄Stockfish perft cross-checks
+npm test                 # vitest — 145 tests incl. chessops⇄Stockfish perft cross-checks
 npm run build            # production build (lint + typecheck included)
 npm run gate             # browser gate vs http://localhost:3000 (needs `npm run start` first)
-npm run gate -- --url <url>     # gate vs a deployed preview
-npm run db:generate      # drizzle-kit generate after editing src/db/schema.ts
+npm run gate -- --url <url>     # gate vs a deployed preview; appends docs/gate-history.jsonl
+npm run db:generate      # drizzle-kit generate + post-generate fixer (B0.8 — never skip the fixer)
 npm run db:verify        # apply ALL migrations + openings seed to an empty in-process Postgres (gate G5)
 npm run openings:build   # recompile src/db/seed/openings.json from data/chess-openings TSVs
 npm run db:seed:openings # upsert openings into a real DB (needs DATABASE_URL)
 npm run engine:refresh   # manual engine upgrade only — NEVER in any install/build path (A0.1)
-node scripts/perft960-report.mjs  # G2 evidence table (chessops vs Stockfish perft)
+node scripts/perft960-report.mjs   # G2 evidence table (chessops vs Stockfish perft)
+node scripts/build-sounds.mjs      # regenerate the synthesized sound set (committed)
+node scripts/e2e-phase1.mjs        # Phase 1 secondary gates (960 castling e2e, shape-only parity)
+npx tsx scripts/arena.mts ...      # calibration self-play (see scripts/calibration-*.sh)
+npx tsx scripts/calibrate-fit.mts --propose|--finalize   # fit → bot-calibration.json
 ```
 
 ## Invariants — violating any of these is a bug
@@ -38,6 +42,10 @@ node scripts/perft960-report.mjs  # G2 evidence table (chessops vs Stockfish per
 - `react-chessboard` is pinned to v4 (spec §1). v5 is a breaking rewrite — don't bump casually.
 - Migrations in `src/db/migrations` are generated — edit `src/db/schema.ts`, run `npm run db:generate`, then `npm run db:verify`. Exception on record: one hand-corrected line in 0002 (drizzle-kit emits custom types as `"undefined"."citext"` in ALTER statements); if that recurs on future citext ALTERs, correct it the same way with a comment. Schema enums are literal (drizzle-kit runs schema.ts standalone) and pinned to their domain constants by `src/db/schema.test.ts`.
 - `src/db/seed/openings.json` is generated-but-committed (hermetic builds); regenerate via `openings:build` when `data/chess-openings/*.tsv` change — the script hard-fails if any PGN stops replaying.
+- `public/sounds/gambit` is generated-but-committed from `scripts/build-sounds.mjs`; `public/pieces/*` are vendored with licenses. **Every asset directory must have an entry in `src/lib/assets/manifest.ts`** (B2.5) — a test enforces it, `/licenses` renders it.
+- Design tokens (B2.3) live in `globals.css`. **`--flag` appears in exactly two places: flagfall and BLUNDER.** A third use is a bug, and there is a test pinning BLUNDER as its only classification. `prefers-reduced-motion` means instant state changes, not shortened animations.
+- Bot policy is `src/lib/engine/bot.ts` (pure; §6 exactly); shipping params come from `src/lib/engine/bot-calibration.json` — **uncalibrated constants do not ship** (Phase 1 gate). The calibration arena/fit pipeline is `scripts/arena.mts`, `scripts/calibration-*.sh`, `scripts/calibrate-fit.mts`; evidence JSONLs live in `data/calibration/`.
+- Bot games charge real wall time to the bot's clock; there is deliberately no 1+0 vs bots (the deep pass costs seconds) — bullet arrives with premoves in Phase 4.
 
 ## Testing expectations
 
