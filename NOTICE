@@ -1,0 +1,39 @@
+GAMBIT — third-party notices
+============================
+
+This application distributes and links the following GPL-licensed
+components. Because chessops is compiled into the application's JavaScript
+bundle and Stockfish binaries are distributed with the site, the combined
+work is distributed under the terms of the GNU General Public License
+v3.0-or-later. Complete license texts and source pointers are served at
+/licenses in the running application.
+
+Stockfish 18 (WASM builds: "Stockfish 18 Lite")
+  License:  GNU General Public License v3.0
+  Source:   https://github.com/official-stockfish/Stockfish
+  WASM port (stockfish.js 18.0.8, by Chess.com, LLC / nmrugg):
+            https://github.com/nmrugg/stockfish.js
+  Files:    /public/engine/stockfish-18-lite{,-single}.{js,wasm}
+            (vendored verbatim; sha256 hashes pinned in
+            scripts/fetch-engine.mjs, refresh via `npm run engine:refresh`)
+  NNUE nets by Linmiao Xu (linrock) and the Stockfish contributors.
+
+chessops 0.15.1
+  License:  GNU General Public License v3.0-or-later
+  Source:   https://github.com/lichess-org/chessops
+  Usage:    rules engine (move generation, FEN/SAN, variants), bundled
+            into the client and server JavaScript.
+
+Lichess chess-openings dataset
+  License:  CC0 1.0 (public domain dedication)
+  Source:   https://github.com/lichess-org/chess-openings
+  Files:    /data/chess-openings/*.tsv (vendored),
+            /src/db/seed/openings.json (compiled form)
+
+Planned (addendum A1.3, Phase 4.5): Fairy-Stockfish WASM (GPL-3.0) for
+variants vanilla Stockfish cannot evaluate. It is not yet distributed; this
+notice will be extended when it lands.
+
+Other dependencies (Next.js, React, react-chessboard, Drizzle, Supabase
+clients, Tailwind) are under MIT/Apache-style licenses; see their package
+metadata in package-lock.json.

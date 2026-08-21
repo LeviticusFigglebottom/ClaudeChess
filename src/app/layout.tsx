@@ -39,8 +39,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         </header>
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
         <footer className="border-t border-zinc-800">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 text-xs text-zinc-500">
-            <span>GAMBIT — Phase 0</span>
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 text-xs text-zinc-500">
+            <span>
+              GAMBIT — Phase 0.5
+              <Link href="/licenses" className="ml-3 text-zinc-600 hover:text-zinc-400">
+                licenses
+              </Link>
+            </span>
             <BootDiagnostics />
           </div>
         </footer>
