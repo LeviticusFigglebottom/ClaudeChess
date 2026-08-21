@@ -1,0 +1,126 @@
+{
+  "probePrefix": "rev2-",
+  "fit": {
+    "d14": {
+      "method": "piecewise",
+      "shift": 106,
+      "maxResidual": 98,
+      "nodes": [
+        {
+          "formulaRating": 800,
+          "measured": 808,
+          "ci95": 349,
+          "games": 20
+        },
+        {
+          "formulaRating": 1000,
+          "measured": 1079,
+          "ci95": 190,
+          "games": 20
+        },
+        {
+          "formulaRating": 1200,
+          "measured": 1390,
+          "ci95": 155,
+          "games": 20
+        },
+        {
+          "formulaRating": 1400,
+          "measured": 1547,
+          "ci95": 166,
+          "games": 20
+        }
+      ]
+    },
+    "d18": {
+      "method": "piecewise",
+      "shift": 595,
+      "maxResidual": 83,
+      "nodes": [
+        {
+          "formulaRating": 1600,
+          "measured": 2112,
+          "ci95": 349,
+          "games": 20
+        },
+        {
+          "formulaRating": 1800,
+          "measured": 2436,
+          "ci95": 488,
+          "games": 20
+        },
+        {
+          "formulaRating": 2200,
+          "measured": 2836,
+          "ci95": 488,
+          "games": 20
+        }
+      ]
+    }
+  },
+  "bands": {
+    "600": {
+      "pBlunder": 0.4346856136596424,
+      "temperature": 5.846856136596424,
+      "formulaEquivalent": 646,
+      "segment": "d14",
+      "extrapolated": true
+    },
+    "800": {
+      "pBlunder": 0.38542649127512324,
+      "temperature": 5.3542649127512325,
+      "formulaEquivalent": 794,
+      "segment": "d14",
+      "extrapolated": true
+    },
+    "1000": {
+      "pBlunder": 0.33616736889060406,
+      "temperature": 4.86167368890604,
+      "formulaEquivalent": 941,
+      "segment": "d14",
+      "extrapolated": false
+    },
+    "1200": {
+      "pBlunder": 0.2907882365474972,
+      "temperature": 4.407882365474972,
+      "formulaEquivalent": 1078,
+      "segment": "d14",
+      "extrapolated": false
+    },
+    "1400": {
+      "pBlunder": 0.24593269984157862,
+      "temperature": 3.959326998415786,
+      "formulaEquivalent": 1212,
+      "segment": "d14",
+      "extrapolated": false
+    },
+    "1600": {
+      "pBlunder": 0.22161445073718172,
+      "temperature": 3.7161445073718173,
+      "formulaEquivalent": 1285,
+      "segment": "d18",
+      "extrapolated": true
+    },
+    "1800": {
+      "pBlunder": 0.1805792646026848,
+      "temperature": 3.3057926460268483,
+      "formulaEquivalent": 1408,
+      "segment": "d18",
+      "extrapolated": true
+    },
+    "2000": {
+      "pBlunder": 0.13954407846818795,
+      "temperature": 2.8954407846818793,
+      "formulaEquivalent": 1531,
+      "segment": "d18",
+      "extrapolated": true
+    },
+    "2200": {
+      "pBlunder": 0.09850889233369109,
+      "temperature": 2.4850889233369107,
+      "formulaEquivalent": 1654,
+      "segment": "d18",
+      "extrapolated": false
+    }
+  }
+}

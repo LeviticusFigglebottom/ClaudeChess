@@ -1,21 +1,30 @@
 /**
  * Calibration fit (Phase 1 gate). Two modes:
  *
- * 1. --propose : read probe results (data/calibration/probe-*.jsonl), fit the
- *    measured-strength curve over the formula parameter family, and invert it
- *    to propose per-band params targeting nominal Elo. Writes
- *    data/calibration/proposed-params.json for the final runs.
+ * 1. --propose : read probe results (data/calibration/rev2-*.jsonl by
+ *    default; override with --prefix), fit the measured-strength curve over
+ *    the formula parameter family, and invert it to propose per-band params
+ *    targeting nominal Elo. Writes data/calibration/proposed-params.json for
+ *    the final runs.
+ *
+ *    The fit is SEGMENT-AWARE: §6 revision (b) changes the search shape at
+ *    1600 (truth depth 14 below, 18 at or above; shallow pass tracks it), so
+ *    the measured curve is two curves — one per shape. Params fitted on one
+ *    shape's curve say nothing about the other, so each target band inverts
+ *    only against probe points sharing its shape. Sweeps (0% or 100%) carry
+ *    no point estimate and are excluded from the inversion nodes.
  *
  * 2. --finalize: read final results (data/calibration/final-*.jsonl, played
  *    at the proposed params), compute measured Elo + CI per band (direct
  *    UCI_Elo anchors; ladder bands combine estimates and inherit anchor
- *    uncertainty), and write src/lib/engine/bot-calibration.json. Fails loudly
- *    if any band misses ±75 or has < 200 games.
+ *    uncertainty), and write src/lib/engine/bot-calibration.json. Amended
+ *    gate: direct bands must land within ±75 of nominal, chained bands
+ *    report their measured CI with an anchor tag; ≥150 games everywhere.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { clamp } from "../src/lib/eval/winprob";
-import { combineEstimates, eloFromMatch } from "../src/lib/rating/elo";
+import { combineEstimates, eloDiffFromScore, eloFromMatch } from "../src/lib/rating/elo";
 
 const BANDS = [600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200];
 const DIRECT_ANCHOR: Record<number, number> = {
@@ -65,91 +74,147 @@ const mode = process.argv.includes("--finalize") ? "finalize" : "propose";
 const dir = path.resolve("data/calibration");
 
 if (mode === "propose") {
-  // Measured strength of the FORMULA params at each probed band.
-  const points: { formulaRating: number; measured: number; games: number }[] = [];
+  const prefixIndex = process.argv.indexOf("--prefix");
+  const prefix = prefixIndex === -1 ? "rev2-" : (process.argv[prefixIndex + 1] ?? "rev2-");
+
+  // Measured strength of the FORMULA params at each probed band. The anchor
+  // comes from each shard's own opponent field (probes below 1320 play the
+  // UCI_Elo floor, not their nominal). Ladder shards (bot opponents) cannot
+  // anchor a fit and are skipped.
+  interface ProbePoint {
+    formulaRating: number;
+    measured: number;
+    ci95: number;
+    score: number;
+    games: number;
+    anchor: number;
+    segment: "d14" | "d18";
+    sweep: boolean;
+  }
+  const segmentOf = (band: number): "d14" | "d18" => (band < 1600 ? "d14" : "d18");
+  const points: ProbePoint[] = [];
   for (const band of BANDS) {
-    const games = readGames(path.join(dir, `probe-${band}.jsonl`));
+    const games = readGames(path.join(dir, `${prefix}${band}.jsonl`));
     if (games.length === 0) continue;
-    const anchor = DIRECT_ANCHOR[band];
-    if (!anchor) continue;
+    const anchorMatch = games[0]!.opponent.match(/^sf-elo-(\d+)$/);
+    if (!anchorMatch) continue;
+    const anchor = Number(anchorMatch[1]);
     const { points: pts, n } = matchStats(games);
     const estimate = eloFromMatch(anchor, pts, n);
-    points.push({ formulaRating: band, measured: estimate.elo, games: n });
+    points.push({
+      formulaRating: band,
+      measured: estimate.elo,
+      ci95: estimate.ci95,
+      score: pts,
+      games: n,
+      anchor,
+      segment: segmentOf(band),
+      // Shutouts carry no point estimate (only a rule-of-three bound) and
+      // must not become inversion nodes.
+      sweep: pts === 0 || pts === n,
+    });
   }
   points.sort((a, b) => a.formulaRating - b.formulaRating);
-  if (points.length < 2) {
-    console.error("need at least two probed bands to fit");
-    process.exit(1);
-  }
 
-  console.log("probe measurements (formula params → measured Elo):");
+  console.log(`probe measurements (${prefix}*.jsonl, formula params → measured Elo):`);
   for (const point of points) {
-    console.log(
-      `  formula-${point.formulaRating}: measured ~${Math.round(point.measured)} (${point.games} games)`
-    );
+    if (point.sweep) {
+      const bound =
+        point.score === 0
+          ? `≤ ~${Math.round(point.anchor + eloDiffFromScore(3 / point.games))}`
+          : `≥ ~${Math.round(point.anchor - eloDiffFromScore(3 / point.games))}`;
+      console.log(
+        `  formula-${point.formulaRating} [${point.segment}]: ${point.score}/${point.games} sweep — no point estimate (${bound} at 95%, rule of three); excluded from fit`
+      );
+    } else {
+      console.log(
+        `  formula-${point.formulaRating} [${point.segment}]: measured ~${Math.round(point.measured)} ±${Math.round(point.ci95)} (${point.score}/${point.games} vs SF@${point.anchor})`
+      );
+    }
   }
 
-  // Shift-first fit: the probe deltas look like a near-constant offset, so
-  // model measured(r) = r + c and re-center the R input; add curvature only
-  // if residuals demand it (fall back to piecewise inversion then).
-  // Shutout matches (score 0 or 1) carry no point estimate and are excluded.
-  const informative = points.filter((point) => point.measured > 200 && point.measured < 3100);
-  const shift =
-    informative.reduce((sum, point) => sum + (point.measured - point.formulaRating), 0) /
-    informative.length;
-  const residuals = informative.map((point) => ({
-    band: point.formulaRating,
-    residual: Math.round(point.measured - point.formulaRating - shift),
-  }));
-  const maxResidual = Math.max(...residuals.map((r) => Math.abs(r.residual)));
-  console.log(
-    `\nconstant-shift fit: measured ≈ r + ${Math.round(shift)}; residuals ${residuals
-      .map((r) => `${r.band}:${r.residual >= 0 ? "+" : ""}${r.residual}`)
-      .join(" ")} (max |${maxResidual}|)`
-  );
+  // Per-segment shift-first fit: model measured(r) = r + c within the shape
+  // segment; fall back to piecewise-linear inversion (with edge extrapolation
+  // on the nearest pair's slope) when residuals demand curvature.
+  const proposal: Record<
+    string,
+    { pBlunder: number; temperature: number; formulaEquivalent: number; segment: string; extrapolated: boolean }
+  > = {};
+  const fitMeta: Record<string, unknown> = {};
+  for (const segment of ["d14", "d18"] as const) {
+    const nodes = points.filter((point) => point.segment === segment && !point.sweep);
+    if (nodes.length < 2) {
+      console.error(`segment ${segment}: need at least two non-sweep probe points, have ${nodes.length}`);
+      process.exit(1);
+    }
+    const shift =
+      nodes.reduce((sum, point) => sum + (point.measured - point.formulaRating), 0) / nodes.length;
+    const residuals = nodes.map((point) => ({
+      band: point.formulaRating,
+      residual: Math.round(point.measured - point.formulaRating - shift),
+    }));
+    const maxResidual = Math.max(...residuals.map((r) => Math.abs(r.residual)));
+    const useShift = maxResidual <= 60;
+    console.log(
+      `\n${segment} segment: constant shift c=+${Math.round(shift)}; residuals ${residuals
+        .map((r) => `${r.band}:${r.residual >= 0 ? "+" : ""}${r.residual}`)
+        .join(" ")} (max |${maxResidual}|) → ${useShift ? "shift fit" : "piecewise inversion (curvature demanded)"}`
+    );
 
-  const piecewiseInvert = (target: number): number => {
-    for (let i = 0; i < points.length - 1; i++) {
-      const a = points[i]!;
-      const b = points[i + 1]!;
-      if ((target >= a.measured && target <= b.measured) || (target <= a.measured && target >= b.measured)) {
-        const t = (target - a.measured) / (b.measured - a.measured || 1);
-        return a.formulaRating + t * (b.formulaRating - a.formulaRating);
+    const low = nodes[0]!;
+    const high = nodes[nodes.length - 1]!;
+    const invert = (target: number): number => {
+      if (useShift) return target - shift;
+      for (let i = 0; i < nodes.length - 1; i++) {
+        const a = nodes[i]!;
+        const b = nodes[i + 1]!;
+        if ((target >= a.measured && target <= b.measured) || (target <= a.measured && target >= b.measured)) {
+          const t = (target - a.measured) / (b.measured - a.measured || 1);
+          return a.formulaRating + t * (b.formulaRating - a.formulaRating);
+        }
       }
-    }
-    const first = points[0]!;
-    const second = points[1]!;
-    const last = points[points.length - 1]!;
-    const secondLast = points[points.length - 2]!;
-    if (target < Math.min(first.measured, last.measured)) {
-      const slope = (second.formulaRating - first.formulaRating) / (second.measured - first.measured || 1);
-      return first.formulaRating + (target - first.measured) * slope;
-    }
-    const slope = (last.formulaRating - secondLast.formulaRating) / (last.measured - secondLast.measured || 1);
-    return last.formulaRating + (target - last.measured) * slope;
-  };
+      if (target < Math.min(low.measured, high.measured)) {
+        const next = nodes[1]!;
+        const slope = (next.formulaRating - low.formulaRating) / (next.measured - low.measured || 1);
+        return low.formulaRating + (target - low.measured) * slope;
+      }
+      const prev = nodes[nodes.length - 2]!;
+      const slope = (high.formulaRating - prev.formulaRating) / (high.measured - prev.measured || 1);
+      return high.formulaRating + (target - high.measured) * slope;
+    };
 
-  const useShift = maxResidual <= 60;
-  if (!useShift) {
-    console.log("residuals exceed 60 — using piecewise inversion (curvature demanded)");
+    for (const band of BANDS.filter((b) => segmentOf(b) === segment)) {
+      const rStar = invert(band);
+      const params = extendedParams(rStar);
+      const extrapolated = band < Math.min(low.measured, high.measured) || band > Math.max(low.measured, high.measured);
+      proposal[String(band)] = {
+        ...params,
+        formulaEquivalent: Math.round(rStar),
+        segment,
+        extrapolated,
+      };
+      console.log(
+        `  target ${band} → r*=${Math.round(rStar)} → T=${params.temperature.toFixed(2)} pB=${params.pBlunder.toFixed(3)}${extrapolated ? "  (extrapolated beyond the segment's measured range)" : ""}`
+      );
+    }
+    fitMeta[segment] = {
+      method: useShift ? "constant-shift" : "piecewise",
+      shift: Math.round(shift),
+      maxResidual,
+      nodes: nodes.map((node) => ({
+        formulaRating: node.formulaRating,
+        measured: Math.round(node.measured),
+        ci95: Math.round(node.ci95),
+        games: node.games,
+      })),
+    };
   }
-  const invert = (target: number): number =>
-    useShift ? target - shift : piecewiseInvert(target);
 
-  const proposal: Record<string, { pBlunder: number; temperature: number; formulaEquivalent: number }> = {};
-  for (const band of BANDS) {
-    const rStar = invert(band);
-    const params = extendedParams(rStar);
-    proposal[String(band)] = { ...params, formulaEquivalent: Math.round(rStar) };
-    console.log(
-      `  target ${band} → formula-equivalent r*=${Math.round(rStar)} → T=${params.temperature.toFixed(2)} pB=${params.pBlunder.toFixed(3)}`
-    );
-  }
   writeFileSync(
     path.join(dir, "proposed-params.json"),
-    JSON.stringify({ bands: proposal }, null, 2) + "\n"
+    JSON.stringify({ probePrefix: prefix, fit: fitMeta, bands: proposal }, null, 2) + "\n"
   );
-  console.log("wrote data/calibration/proposed-params.json");
+  console.log("\nwrote data/calibration/proposed-params.json");
 } else {
   // Finalize: direct bands first (their measured Elo anchors the ladder).
   interface BandResult {
@@ -264,7 +329,7 @@ if (mode === "propose") {
 
   const output = {
     method:
-      "Fitted from self-play vs Stockfish 18 Lite UCI_LimitStrength anchors at 400ms/move (bands 1000-2200 direct; 1320 floor for 1000/1200) and calibrated-bot ladder opponents for 800/600. Adjudication: forced mate <=6, dead draws, 140-ply cap. Bot side runs the exact shipping policy (d6+d18 MPV5) on the shipping engine.",
+      "Fitted from self-play vs Stockfish 18 Lite UCI_LimitStrength anchors at 400ms/move (bands 1000-2200 direct; 1320 floor for 1000/1200) and calibrated-bot ladder opponents for 800/600. Adjudication: forced mate <=6, dead draws, 140-ply cap. Bot side runs the exact shipping policy (revised section 6: band-scaled MultiPV 4-24, truth depth 14 below 1600 / 18 at or above, shallow pass 12 plies behind truth at the same MultiPV) on the shipping engine. Params fitted segment-aware per search shape.",
     referenceMovetimeMs: 400,
     fittedAt: new Date().toISOString(),
     bands: Object.fromEntries(
