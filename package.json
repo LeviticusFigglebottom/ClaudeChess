@@ -1,0 +1,43 @@
+{
+  "name": "gambit",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "engine:fetch": "node scripts/fetch-engine.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "gate": "node scripts/gate-check.mjs",
+    "postinstall": "node scripts/fetch-engine.mjs"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.3",
+    "chess.js": "^1.4.0",
+    "drizzle-orm": "^0.45.2",
+    "next": "^15.5.23",
+    "postgres": "^3.4.9",
+    "react": "^19.2.0",
+    "react-chessboard": "^4.7.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9.39.0",
+    "eslint-config-next": "^15.5.23",
+    "playwright": "^1.58.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.11"
+  }
+}
