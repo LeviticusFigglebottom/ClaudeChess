@@ -245,6 +245,45 @@ export class GamePosition {
     return chessopsPerft(this.pos, depth);
   }
 
+  /** All legal moves as facade-convention UCI strings. */
+  legalMovesUci(): string[] {
+    const moves: string[] = [];
+    for (const [from, dests] of this.pos.allDests()) {
+      for (const to of dests) {
+        const piece = this.pos.board.get(from);
+        if (piece?.role === "pawn" && (squareRank(to) === 7 || squareRank(to) === 0)) {
+          moves.push(this.uciFor({ from, to, promotion: "queen" }));
+        } else {
+          moves.push(this.uciFor({ from, to }));
+        }
+      }
+    }
+    return moves;
+  }
+
+  /**
+   * Legal moves after which the opponent has NO mate in one — the candidate
+   * pool for the bot's near-random floor (§6 revision e). Auto-queens
+   * promotions (underpromotion-to-avoid-mate is beyond a random mover).
+   */
+  legalMovesAvoidingMateInOne(): string[] {
+    const safe: string[] = [];
+    for (const uci of this.legalMovesUci()) {
+      const probe = GamePosition.fromFen(this.fen(), this.variant);
+      if (!probe.moveUci(uci)) continue;
+      let opponentMates = false;
+      for (const reply of probe.legalMovesUci()) {
+        const replyProbe = GamePosition.fromFen(probe.fen(), this.variant);
+        if (replyProbe.moveUci(reply) && replyProbe.isCheckmate()) {
+          opponentMates = true;
+          break;
+        }
+      }
+      if (!opponentMates) safe.push(uci);
+    }
+    return safe;
+  }
+
   private isPromotionMove(from: number, to: number): boolean {
     const piece = this.pos.board.get(from);
     if (piece?.role !== "pawn") return false;

@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { mulberry32 } from "@/lib/rng";
 import type { EngineInfo } from "./types";
-import { formulaParams, phaseFactor, selectBotMove, type BotSearchSnapshot } from "./bot";
+import {
+  bandSearchSettings,
+  blunderWindow,
+  formulaParams,
+  phaseFactor,
+  pRandom,
+  selectBotMove,
+  type BotSearchSnapshot,
+} from "./bot";
 
 function info(uci: string, multipv: number, scoreCp: number | null, mateIn: number | null = null): EngineInfo {
-  return { depth: 18, multipv, scoreCp, mateIn, pv: [uci], nodes: 0, nps: 0 };
+  return { depth: 14, multipv, scoreCp, mateIn, pv: [uci], nodes: 0, nps: 0 };
 }
 
-/** Deep list with mover-POV cp per candidate; shallow list is just an ordering. */
 function snapshot(
   deepCp: [string, number][],
   shallowOrder: string[],
@@ -18,71 +25,120 @@ function snapshot(
     shallow: shallowOrder.map((uci, index) => info(uci, index + 1, 0)),
     legalMoveCount: 30,
     inCheck: false,
+    randomSafeMoves: [],
     ...extras,
   };
 }
 
-describe("formulaParams (spec §6.4)", () => {
-  it("matches the spec formulas at the band edges", () => {
-    expect(formulaParams(600)).toEqual({ pBlunder: 0.45, temperature: 6.0 });
-    expect(formulaParams(1400).pBlunder).toBeCloseTo(0.45 - 800 / 3000, 10);
-    expect(formulaParams(1400).temperature).toBeCloseTo(6.0 - 800 / 300, 10);
-    expect(formulaParams(2200)).toEqual({ pBlunder: 0.02, temperature: 6.0 - 1600 / 300 });
-    // Clamps hold beyond the band range.
-    expect(formulaParams(3000).pBlunder).toBe(0.02);
-    expect(formulaParams(3000).temperature).toBe(0.15);
+describe("revised per-band search shapes (revision a+b)", () => {
+  it("MultiPV scales 600→24, 1400→16, 2200→8; clamped [4,24]", () => {
+    expect(bandSearchSettings(600).deep.multipv).toBe(24);
+    expect(bandSearchSettings(1000).deep.multipv).toBe(20);
+    expect(bandSearchSettings(1400).deep.multipv).toBe(16);
+    expect(bandSearchSettings(2200).deep.multipv).toBe(8);
+    expect(bandSearchSettings(3000).deep.multipv).toBe(4);
+    expect(bandSearchSettings(0).deep.multipv).toBe(24);
+  });
+
+  it("truth depth is 14 below 1600, 18 at or above; shallow fixed at d6 MPV5", () => {
+    expect(bandSearchSettings(600).deep.depth).toBe(14);
+    expect(bandSearchSettings(1400).deep.depth).toBe(14);
+    expect(bandSearchSettings(1600).deep.depth).toBe(18);
+    expect(bandSearchSettings(2200).deep.depth).toBe(18);
+    for (const rating of [600, 1400, 2200]) {
+      expect(bandSearchSettings(rating).shallow).toEqual({ depth: 6, multipv: 5 });
+    }
   });
 });
 
-describe("phaseFactor (spec §6.5)", () => {
-  it("raises 1.4x in complex middlegames, halves in forced sequences", () => {
-    expect(phaseFactor(40, false)).toBe(1.4);
-    expect(phaseFactor(20, false)).toBe(1);
-    expect(phaseFactor(4, false)).toBe(0.5);
-    expect(phaseFactor(30, true)).toBe(0.5);
+describe("revised blunder window (revision c)", () => {
+  it("widens at low bands: 600→[15,125], 1400→[15,85], 2200→[15,45]", () => {
+    expect(blunderWindow(600)).toEqual({ min: 15, max: 125 });
+    expect(blunderWindow(1400)).toEqual({ min: 15, max: 85 });
+    expect(blunderWindow(2200)).toEqual({ min: 15, max: 45 });
   });
 });
 
-describe("selectBotMove — shallow-good/deep-bad blunder branch", () => {
-  // Deep truth: best +100cp; "e2e4" loses ~25wp (plausible blunder);
-  // "h2h4" loses ~60wp (absurd); both look good shallow.
-  const base = snapshot(
-    [
-      ["g1f3", 100],
-      ["d2d4", 80],
-      ["e2e4", -220], // ≈25wp loss vs +100
-      ["c2c4", 40],
-      ["h2h4", -700], // ≈57wp loss — outside the 45 cap
-    ],
-    ["e2e4", "h2h4", "g1f3", "d2d4", "c2c4"]
-  );
-
-  it("plays the plausible blunder when the roll hits", () => {
-    const rng = () => 0; // roll < pBlunder, then irrelevant
-    const choice = selectBotMove({ pBlunder: 0.4, temperature: 1 }, base, rng);
-    expect(choice?.uci).toBe("e2e4");
-    expect(choice?.playedBlunder).toBe(true);
-    expect(choice?.wpLoss).toBeGreaterThanOrEqual(15);
-    expect(choice?.wpLoss).toBeLessThanOrEqual(45);
+describe("near-random floor (revision e)", () => {
+  it("pRandom: 600→0.2, 800→0.1, 1000→0, clamped", () => {
+    expect(pRandom(600)).toBeCloseTo(0.2, 10);
+    expect(pRandom(800)).toBeCloseTo(0.1, 10);
+    expect(pRandom(1000)).toBe(0);
+    expect(pRandom(2200)).toBe(0);
+    expect(pRandom(0)).toBe(0.2);
   });
 
-  it("never plays an absurd (>45wp) move as the blunder even at shallow rank 1", () => {
-    const absurdOnly = snapshot(
+  it("fires before the blunder branch and samples the safe list uniformly-ish", () => {
+    const base = snapshot(
       [
         ["g1f3", 100],
-        ["h2h4", -700],
+        ["e2e4", -220],
       ],
-      ["h2h4", "g1f3"]
+      ["e2e4", "g1f3"],
+      { randomSafeMoves: ["a2a3", "h2h4", "b1c3"] }
     );
-    for (let seed = 0; seed < 50; seed++) {
-      const choice = selectBotMove(
-        { pBlunder: 0.9, temperature: 0.15 },
-        absurdOnly,
+    const seen = new Set<string>();
+    const rng = mulberry32(3);
+    for (let i = 0; i < 400; i++) {
+      const choice = selectBotMove(600, { pBlunder: 1, temperature: 1 }, base, rng);
+      if (choice?.kind === "random") seen.add(choice.uci);
+    }
+    // pRandom(600)=0.2 → ~80 random picks over 400 — all from the safe list.
+    expect(seen.size).toBe(3);
+    for (const uci of seen) expect(["a2a3", "h2h4", "b1c3"]).toContain(uci);
+  });
+
+  it("never fires when the safe list is empty or the band is ≥1000", () => {
+    const base = snapshot([["g1f3", 100]], ["g1f3"], { randomSafeMoves: [] });
+    for (let seed = 0; seed < 30; seed++) {
+      expect(
+        selectBotMove(600, { pBlunder: 0, temperature: 0.15 }, base, mulberry32(seed))?.kind
+      ).toBe("sampled");
+    }
+    const withSafe = snapshot([["g1f3", 100]], ["g1f3"], { randomSafeMoves: ["a2a3"] });
+    for (let seed = 0; seed < 30; seed++) {
+      expect(
+        selectBotMove(1400, { pBlunder: 0, temperature: 0.15 }, withSafe, mulberry32(seed))?.kind
+      ).toBe("sampled");
+    }
+  });
+});
+
+describe("blunder branch under the widened window", () => {
+  // ~57wp loss: absurd for 2200 ([15,45]) but inside 600's window ([15,125]).
+  const hangs = snapshot(
+    [
+      ["g1f3", 100],
+      ["h2h4", -700],
+    ],
+    ["h2h4", "g1f3"]
+  );
+
+  it("a queen-hang-sized loss is a valid blunder at 600 but not at 2200", () => {
+    const at600 = selectBotMove(600, { pBlunder: 1, temperature: 0.15 }, hangs, () => 0.5);
+    expect(at600?.kind).toBe("blunder");
+    expect(at600?.uci).toBe("h2h4");
+
+    for (let seed = 0; seed < 30; seed++) {
+      const at2200 = selectBotMove(
+        2200,
+        { pBlunder: 1, temperature: 0.15 },
+        hangs,
         mulberry32(seed)
       );
-      expect(choice?.uci).toBe("g1f3");
-      expect(choice?.playedBlunder).toBe(false);
+      expect(at2200?.kind).toBe("sampled");
+      expect(at2200?.uci).toBe("g1f3");
     }
+  });
+
+  it("reports blunder availability on every choice (revision d instrumentation)", () => {
+    const available = selectBotMove(600, { pBlunder: 0, temperature: 0.15 }, hangs, () => 0.99);
+    expect(available?.blunderAvailable).toBe(true);
+    expect(available?.kind).toBe("sampled");
+
+    const none = snapshot([["g1f3", 100], ["d2d4", 90]], ["g1f3", "d2d4"]);
+    const unavailable = selectBotMove(600, { pBlunder: 1, temperature: 0.15 }, none, () => 0.5);
+    expect(unavailable?.blunderAvailable).toBe(false);
   });
 
   it("ignores blunder candidates outside the shallow top-3", () => {
@@ -91,29 +147,35 @@ describe("selectBotMove — shallow-good/deep-bad blunder branch", () => {
         ["g1f3", 100],
         ["e2e4", -220],
       ],
-      ["a2a3", "a2a4", "b2b3", "e2e4"] // e2e4 ranks 4th shallow
+      ["a2a3", "a2a4", "b2b3", "e2e4"]
     );
-    const choice = selectBotMove({ pBlunder: 0.9, temperature: 0.15 }, deepBad, () => 0);
-    expect(choice?.playedBlunder).toBe(false);
+    const choice = selectBotMove(1400, { pBlunder: 1, temperature: 0.15 }, deepBad, () => 0.5);
+    expect(choice?.kind).toBe("sampled");
   });
 
   it("forced positions halve the effective blunder rate", () => {
-    const inCheck = { ...base, inCheck: true };
-    const choice = selectBotMove({ pBlunder: 0.4, temperature: 1 }, inCheck, () => 0.3);
-    // 0.3 >= 0.4 * 0.5 → blunder branch must NOT fire.
-    expect(choice?.playedBlunder).toBe(false);
+    const base = snapshot(
+      [
+        ["g1f3", 100],
+        ["e2e4", -220],
+      ],
+      ["e2e4", "g1f3"],
+      { inCheck: true }
+    );
+    const choice = selectBotMove(1400, { pBlunder: 0.4, temperature: 1 }, base, () => 0.3);
+    expect(choice?.kind).toBe("sampled"); // 0.3 >= 0.4 × 0.5
     expect(choice?.effectivePBlunder).toBeCloseTo(0.2, 10);
   });
 });
 
-describe("selectBotMove — softmax sampling", () => {
+describe("softmax fallthrough (revision d)", () => {
   const losses = snapshot(
     [
       ["a1", 100],
-      ["b1", 20], // ~9wp loss
-      ["c1", -60], // ~14wp
-      ["d1", -180], // ~24wp
-      ["e1", -400], // ~36wp
+      ["b1", 20],
+      ["c1", -60],
+      ["d1", -180],
+      ["e1", -400],
     ],
     ["a1", "b1", "c1", "d1", "e1"]
   );
@@ -121,8 +183,7 @@ describe("selectBotMove — softmax sampling", () => {
   it("near-zero temperature collapses to the best move", () => {
     const rng = mulberry32(7);
     for (let i = 0; i < 200; i++) {
-      const choice = selectBotMove({ pBlunder: 0, temperature: 0.15 }, losses, rng);
-      expect(choice?.uci).toBe("a1");
+      expect(selectBotMove(2200, { pBlunder: 0, temperature: 0.15 }, losses, rng)?.uci).toBe("a1");
     }
   });
 
@@ -130,29 +191,34 @@ describe("selectBotMove — softmax sampling", () => {
     const rng = mulberry32(7);
     const seen = new Set<string>();
     for (let i = 0; i < 300; i++) {
-      seen.add(selectBotMove({ pBlunder: 0, temperature: 6 }, losses, rng)?.uci ?? "");
+      seen.add(selectBotMove(600, { pBlunder: 0, temperature: 6 }, losses, rng)?.uci ?? "");
     }
     expect(seen.size).toBeGreaterThanOrEqual(4);
   });
 
-  it("handles mate scores as wp endpoints", () => {
-    const mating: BotSearchSnapshot = {
-      deep: [
-        { ...info("h5f7", 1, null, 1) },
-        info("d1h5", 2, 300),
-      ],
-      shallow: [info("h5f7", 1, null, 1)],
-      legalMoveCount: 30,
-      inCheck: false,
-    };
-    const choice = selectBotMove({ pBlunder: 0, temperature: 0.15 }, mating, mulberry32(1));
+  it("handles mate scores and empty candidate lists", () => {
+    const mating: BotSearchSnapshot = snapshot([], []);
+    expect(selectBotMove(1400, { pBlunder: 0.2, temperature: 1 }, mating, mulberry32(1))).toBeNull();
+
+    const withMate = snapshot([["h5f7", 0]], ["h5f7"]);
+    withMate.deep[0] = { ...info("h5f7", 1, null, 1) };
+    const choice = selectBotMove(1400, { pBlunder: 0, temperature: 0.15 }, withMate, mulberry32(1));
     expect(choice?.uci).toBe("h5f7");
     expect(choice?.wpLoss).toBe(0);
   });
+});
 
-  it("returns null with no legal continuations", () => {
-    expect(
-      selectBotMove({ pBlunder: 0.2, temperature: 1 }, snapshot([], []), mulberry32(1))
-    ).toBeNull();
+describe("formula priors (unchanged calibrated-knob formulas)", () => {
+  it("matches the spec formulas and clamps", () => {
+    expect(formulaParams(600)).toEqual({ pBlunder: 0.45, temperature: 6.0 });
+    expect(formulaParams(1400).temperature).toBeCloseTo(3.333, 3);
+    expect(formulaParams(3000)).toEqual({ pBlunder: 0.02, temperature: 0.15 });
+  });
+
+  it("phaseFactor: 1.4 complex, 0.5 forced", () => {
+    expect(phaseFactor(40, false)).toBe(1.4);
+    expect(phaseFactor(20, false)).toBe(1);
+    expect(phaseFactor(4, false)).toBe(0.5);
+    expect(phaseFactor(30, true)).toBe(0.5);
   });
 });

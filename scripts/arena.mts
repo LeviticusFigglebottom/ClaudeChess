@@ -23,8 +23,9 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { GamePosition, START_FEN } from "../src/lib/chess";
 import {
-  BOT_SEARCH,
+  bandSearchSettings,
   formulaParams,
+  pRandom,
   selectBotMove,
   type BotPolicyParams,
 } from "../src/lib/engine/bot";
@@ -92,10 +93,14 @@ interface GameRecord {
   botParams: BotPolicyParams;
   opponent: string;
   ms: number;
+  /** Revision (d) instrumentation, for the CALIBRATED bot's moves only. */
+  moves: number;
+  blunderAvailable: number;
+  byKind: { random: number; blunder: number; sampled: number };
 }
 
 type Mover =
-  | { kind: "bot"; params: BotPolicyParams; engine: NodeEngine }
+  | { kind: "bot"; rating: number; params: BotPolicyParams; engine: NodeEngine }
   | { kind: "ref"; engine: NodeEngine };
 
 async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
@@ -121,6 +126,7 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
     await opponentEngine.init({ chess960: false, hashMb: 96 });
     opponent = {
       kind: "bot",
+      rating: args.opponentBot as number,
       params: paramsFor(args.opponentBot as number, args.paramsFile),
       engine: opponentEngine,
     };
@@ -145,6 +151,9 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
   const recentBotCp: number[] = [];
   let endReason = "";
   let score = -1;
+  let botMoves = 0;
+  let blunderAvailableCount = 0;
+  const byKind = { random: 0, blunder: 0, sampled: 0 };
 
   const finish = (s: number, reason: string): void => {
     score = s;
@@ -174,15 +183,16 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
 
     const moverIsBot = position.turn === botColor;
     const mover: Mover = moverIsBot
-      ? { kind: "bot", params: botParams, engine: botEngine }
+      ? { kind: "bot", rating: args.bot, params: botParams, engine: botEngine }
       : opponent;
 
     let uci: string | null = null;
     if (mover.kind === "ref") {
       uci = await mover.engine.bestMove(START_FEN, moves, args.refMovetimeMs);
     } else {
-      const shallow = await mover.engine.analyze(START_FEN, moves, BOT_SEARCH.shallow);
-      const deep = await mover.engine.analyze(START_FEN, moves, BOT_SEARCH.deep);
+      const search = bandSearchSettings(mover.rating);
+      const shallow = await mover.engine.analyze(START_FEN, moves, search.shallow);
+      const deep = await mover.engine.analyze(START_FEN, moves, search.deep);
       const top = deep.infos[0];
       if (top) {
         // Track from the CALIBRATED bot's perspective for adjudication.
@@ -204,12 +214,25 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
           break;
         }
       }
-      const choice = selectBotMove(mover.params, {
-        shallow: shallow.infos,
-        deep: deep.infos,
-        legalMoveCount: position.legalMoveCount(),
-        inCheck: position.isCheck(),
-      }, rng);
+      const randomSafeMoves =
+        pRandom(mover.rating) > 0 ? position.legalMovesAvoidingMateInOne() : [];
+      const choice = selectBotMove(
+        mover.rating,
+        mover.params,
+        {
+          shallow: shallow.infos,
+          deep: deep.infos,
+          legalMoveCount: position.legalMoveCount(),
+          inCheck: position.isCheck(),
+          randomSafeMoves,
+        },
+        rng
+      );
+      if (moverIsBot && choice) {
+        botMoves++;
+        if (choice.blunderAvailable) blunderAvailableCount++;
+        byKind[choice.kind]++;
+      }
       uci = choice?.uci ?? deep.bestmove;
     }
 
@@ -239,6 +262,9 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
     botParams,
     opponent: opponentLabel,
     ms: Math.round(performance.now() - t0),
+    moves: botMoves,
+    blunderAvailable: blunderAvailableCount,
+    byKind,
   };
 }
 

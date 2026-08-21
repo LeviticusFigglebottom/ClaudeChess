@@ -3,31 +3,59 @@ import type { Rng } from "@/lib/rng";
 import type { EngineInfo } from "./types";
 
 /**
- * Tier A bot move selection (spec §6): shallow-good/deep-bad sampling.
+ * Tier A bot move selection — spec §6 as REVISED by the Phase 1 policy
+ * directive (supersedes the original constants):
  *
- * The core trick: a move that ranks top-3 at depth 6 but is bad at depth 18
- * is a human-plausible blunder — exactly the move a 1200 plays. Otherwise
- * sample from the deep MultiPV via softmax over −wpLoss.
+ *  a. MultiPV scales with band: clamp(round(24 − (R−600)/100), 4, 24) —
+ *     600→24, 1400→16, 2200→8. A 1000 plays the 15th-best move; it can't
+ *     when only 5 candidates exist. (Engine returns fewer lines than the
+ *     option when fewer legal moves exist — the legal-move cap is implicit.)
+ *  b. Truth depth scales: 14 below 1600, 18 at or above. Shallow pass stays
+ *     depth 6 / MultiPV 5 at every band.
+ *  c. Blunder loss window widens at low bands: [15, 45 + (2200 − R)/20] —
+ *     600: [15,125] (queens get hung), 2200: [15,45].
+ *  d. Fallthrough NEVER plays near-best silently: softmax over the full
+ *     widened MultiPV at temperature. Candidate availability is reported on
+ *     every choice for instrumentation.
+ *  e. Near-random floor for the bottom bands: pRandom = clamp((1000−R)/2000,
+ *     0, 0.2), uniform over legal moves that don't allow an immediate mate
+ *     in reply, applied BEFORE the blunder branch.
  *
- * POV note: both searches are run on the position the bot must move in, so
- * raw EngineInfo scores are already the MOVER's POV — winProb applies
- * directly, no White-POV normalization involved (that boundary is for
- * storage/display, not for a mover choosing its own move).
+ * POV note: both searches run on the position the bot must move in, so raw
+ * EngineInfo scores are already the MOVER's POV — winProb applies directly.
  *
- * The formula constants below are the spec's priors. Shipping values are
- * CALIBRATED per band (bot-calibration.json, fitted from ≥200 self-play
- * games per band vs a reference Stockfish — the Phase 1 gate). Uncalibrated
- * constants do not ship.
+ * The formula constants are priors; shipping (pBlunder, temperature) come
+ * calibrated per band from bot-calibration.json (the Phase 1 gate).
  */
 
 export const BOT_RATINGS = [600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200] as const;
 export type BotRating = (typeof BOT_RATINGS)[number];
 
-/** Spec §4.6/§6 search settings for the two passes. */
-export const BOT_SEARCH = {
-  shallow: { depth: 6, multipv: 5 },
-  deep: { depth: 18, multipv: 5 },
-} as const;
+export interface SearchSettings {
+  depth: number;
+  multipv: number;
+}
+
+/** Revision (a) + (b): per-band search shapes. Shallow is fixed at all bands. */
+export function bandSearchSettings(rating: number): { shallow: SearchSettings; deep: SearchSettings } {
+  return {
+    shallow: { depth: 6, multipv: 5 },
+    deep: {
+      depth: rating < 1600 ? 14 : 18,
+      multipv: clamp(Math.round(24 - (rating - 600) / 100), 4, 24),
+    },
+  };
+}
+
+/** Revision (c): band-dependent blunder-loss window (win-prob points). */
+export function blunderWindow(rating: number): { min: number; max: number } {
+  return { min: 15, max: Math.max(15, 45 + (2200 - rating) / 20) };
+}
+
+/** Revision (e): near-random floor probability for the bottom bands. */
+export function pRandom(rating: number): number {
+  return clamp((1000 - rating) / 2000, 0, 0.2);
+}
 
 export interface BotPolicyParams {
   /** Base probability of playing a plausible blunder when one exists. */
@@ -36,7 +64,7 @@ export interface BotPolicyParams {
   temperature: number;
 }
 
-/** Spec §6 formula priors, before calibration. */
+/** Spec §6 formula priors for the calibrated knobs. */
 export function formulaParams(rating: number): BotPolicyParams {
   return {
     pBlunder: clamp(0.45 - (rating - 600) / 3000, 0.02, 0.45),
@@ -45,26 +73,32 @@ export function formulaParams(rating: number): BotPolicyParams {
 }
 
 export interface BotSearchSnapshot {
-  /** Final depth-6 MultiPV-5 infos, in multipv order (side-to-move POV). */
+  /** Final shallow-pass infos, in multipv order (side-to-move POV). */
   shallow: EngineInfo[];
-  /** Final depth-18 MultiPV-5 infos, in multipv order (side-to-move POV). */
+  /** Final deep-pass infos, in multipv order (side-to-move POV). */
   deep: EngineInfo[];
   legalMoveCount: number;
   inCheck: boolean;
+  /**
+   * Legal moves that do not allow an immediate mate in reply (revision e).
+   * Only consulted when pRandom(rating) > 0 — callers may pass [] otherwise.
+   */
+  randomSafeMoves: string[];
 }
+
+export type BotMoveKind = "random" | "blunder" | "sampled";
 
 export interface BotMoveChoice {
   uci: string;
-  /** True when the shallow-good/deep-bad branch fired. */
-  playedBlunder: boolean;
-  /** Mover-POV win-prob loss of the chosen move vs the deep best line. */
-  wpLoss: number;
-  /** Effective pBlunder after phase scaling (diagnostics/logging). */
+  kind: BotMoveKind;
+  /** Mover-POV win-prob loss vs the deep best line (unknown for random moves outside MPV). */
+  wpLoss: number | null;
+  /** A shallow-good/deep-bad candidate existed for this move (instrumentation, revision d). */
+  blunderAvailable: boolean;
+  /** Effective pBlunder after phase scaling (diagnostics). */
   effectivePBlunder: number;
 }
 
-const BLUNDER_MIN_LOSS = 15;
-const BLUNDER_MAX_LOSS = 45;
 const SHALLOW_TOP_N = 3;
 
 function moverWp(info: EngineInfo): number {
@@ -74,8 +108,7 @@ function moverWp(info: EngineInfo): number {
 
 /**
  * §6.5 phase scaling: ×1.4 in complex middlegames (legal moves > 35), ×0.5
- * in forced sequences. "Forced" is operationalized as in check or ≤ 5 legal
- * moves — the calibration fit absorbs the exact cut.
+ * in forced sequences (in check or ≤ 5 legal moves).
  */
 export function phaseFactor(legalMoveCount: number, inCheck: boolean): number {
   if (inCheck || legalMoveCount <= 5) return 0.5;
@@ -84,6 +117,7 @@ export function phaseFactor(legalMoveCount: number, inCheck: boolean): number {
 }
 
 export function selectBotMove(
+  rating: number,
   params: BotPolicyParams,
   snapshot: BotSearchSnapshot,
   rng: Rng
@@ -103,34 +137,53 @@ export function selectBotMove(
     if (uci && !shallowRank.has(uci)) shallowRank.set(uci, index);
   });
 
-  // Human-plausible blunders: top-3 at depth 6, deep loss inside the window
-  // (below 15 it isn't a blunder; above 45 it's an absurdity — the random
-  // queen hang this design exists to avoid).
+  const window = blunderWindow(rating);
   const blunderCandidates = candidates.filter((candidate) => {
     const rank = shallowRank.get(candidate.uci);
     return (
       rank !== undefined &&
       rank < SHALLOW_TOP_N &&
-      candidate.wpLoss >= BLUNDER_MIN_LOSS &&
-      candidate.wpLoss <= BLUNDER_MAX_LOSS
+      candidate.wpLoss >= window.min &&
+      candidate.wpLoss <= window.max
     );
   });
+  const blunderAvailable = blunderCandidates.length > 0;
 
   const effectivePBlunder = clamp(
     params.pBlunder * phaseFactor(snapshot.legalMoveCount, snapshot.inCheck),
     0,
-    0.9
+    1
   );
 
-  if (blunderCandidates.length > 0 && rng() < effectivePBlunder) {
-    // The most plausible blunder = the one the shallow search liked most.
+  // (e) Near-random floor, before the blunder branch.
+  if (pRandom(rating) > 0 && snapshot.randomSafeMoves.length > 0 && rng() < pRandom(rating)) {
+    const uci = snapshot.randomSafeMoves[
+      Math.floor(rng() * snapshot.randomSafeMoves.length)
+    ] as string;
+    const known = candidates.find((candidate) => candidate.uci === uci);
+    return {
+      uci,
+      kind: "random",
+      wpLoss: known?.wpLoss ?? null,
+      blunderAvailable,
+      effectivePBlunder,
+    };
+  }
+
+  if (blunderAvailable && rng() < effectivePBlunder) {
     const chosen = blunderCandidates.reduce((a, b) =>
       (shallowRank.get(a.uci) ?? 9) <= (shallowRank.get(b.uci) ?? 9) ? a : b
     );
-    return { uci: chosen.uci, playedBlunder: true, wpLoss: chosen.wpLoss, effectivePBlunder };
+    return {
+      uci: chosen.uci,
+      kind: "blunder",
+      wpLoss: chosen.wpLoss,
+      blunderAvailable,
+      effectivePBlunder,
+    };
   }
 
-  // Softmax over −wpLoss with temperature T.
+  // (d) Fallthrough: softmax over the FULL widened MultiPV at temperature.
   const weights = candidates.map((candidate) => Math.exp(-candidate.wpLoss / params.temperature));
   const total = weights.reduce((a, b) => a + b, 0);
   let roll = rng() * total;
@@ -138,9 +191,21 @@ export function selectBotMove(
     roll -= weights[i] as number;
     if (roll <= 0) {
       const chosen = candidates[i] as (typeof candidates)[number];
-      return { uci: chosen.uci, playedBlunder: false, wpLoss: chosen.wpLoss, effectivePBlunder };
+      return {
+        uci: chosen.uci,
+        kind: "sampled",
+        wpLoss: chosen.wpLoss,
+        blunderAvailable,
+        effectivePBlunder,
+      };
     }
   }
   const fallback = candidates[0] as (typeof candidates)[number];
-  return { uci: fallback.uci, playedBlunder: false, wpLoss: fallback.wpLoss, effectivePBlunder };
+  return {
+    uci: fallback.uci,
+    kind: "sampled",
+    wpLoss: fallback.wpLoss,
+    blunderAvailable,
+    effectivePBlunder,
+  };
 }

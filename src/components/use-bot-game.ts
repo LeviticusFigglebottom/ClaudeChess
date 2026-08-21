@@ -14,7 +14,7 @@ import {
   type ClockConfig,
   type ClockState,
 } from "@/lib/clock/clock";
-import { BOT_SEARCH, selectBotMove, type BotRating } from "@/lib/engine/bot";
+import { bandSearchSettings, pRandom, selectBotMove, type BotRating } from "@/lib/engine/bot";
 import { botForRating, type BotDefinition } from "@/lib/engine/bots";
 import { createEngine, defaultThreads, type EngineInfo, type StockfishClient } from "@/lib/engine";
 import type { Prefs } from "@/lib/prefs/prefs";
@@ -193,11 +193,12 @@ export function useBotGame(prefs: Prefs) {
       if (generation !== generationRef.current) return;
       const startFen = position.startFen;
       const moves = position.history().map((move) => move.uci);
+      const search = bandSearchSettings(bot.rating);
       engine.setPosition(startFen, moves);
-      const shallow = await finalInfos(engine.analyze(BOT_SEARCH.shallow));
+      const shallow = await finalInfos(engine.analyze(search.shallow));
       if (generation !== generationRef.current) return;
       engine.setPosition(startFen, moves);
-      const deep = await finalInfos(engine.analyze(BOT_SEARCH.deep));
+      const deep = await finalInfos(engine.analyze(search.deep));
       if (generation !== generationRef.current) return;
 
       const top = deep[0];
@@ -210,12 +211,14 @@ export function useBotGame(prefs: Prefs) {
         : null;
 
       const choice = selectBotMove(
+        bot.rating,
         bot.params,
         {
           shallow,
           deep,
           legalMoveCount: position.legalMoveCount(),
           inCheck: position.isCheck(),
+          randomSafeMoves: pRandom(bot.rating) > 0 ? position.legalMovesAvoidingMateInOne() : [],
         },
         Math.random
       );

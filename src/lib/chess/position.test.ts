@@ -96,6 +96,31 @@ describe("GamePosition facade — standard chess", () => {
     expect(isValidFen("not a fen")).toBe(false);
     expect(isValidFen("8/8/8/8/8/8/8/8 w - - 0 1")).toBe(false); // no kings
   });
+
+  it("filters moves that allow an immediate mate in reply (§6 revision e)", () => {
+    // Black to move, White threatens Qxf7#. Almost every black move loses to
+    // it; the defenses (e.g. Qe7/Qf6/g6 blocking or covering f7) survive.
+    const position = GamePosition.fromFen(
+      "rnbqkbnr/pppp1ppp/8/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR b KQkq - 3 3"
+    );
+    const all = position.legalMovesUci();
+    const safe = position.legalMovesAvoidingMateInOne();
+    expect(all.length).toBeGreaterThan(safe.length);
+    expect(safe.length).toBeGreaterThan(0);
+    expect(safe).toContain("d8e7"); // Qe7 defends f7
+    expect(safe).not.toContain("b8c6"); // Nc6 allows Qxf7#
+    // Every "safe" move genuinely leaves no mate in one.
+    for (const uci of safe) {
+      const probe = GamePosition.fromFen(position.fen());
+      probe.moveUci(uci);
+      const mates = probe.legalMovesUci().some((reply) => {
+        const replyProbe = GamePosition.fromFen(probe.fen());
+        replyProbe.moveUci(reply);
+        return replyProbe.isCheckmate();
+      });
+      expect(mates, `${uci} should be safe`).toBe(false);
+    }
+  });
 });
 
 describe("GamePosition facade — chess960", () => {
