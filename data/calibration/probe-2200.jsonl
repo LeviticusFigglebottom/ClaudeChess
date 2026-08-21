@@ -27,3 +27,4 @@
 {"game":26,"seed":2200212494,"botColor":"w","opening":"1. Nf3 d5 2. g3 g6","score":1,"plies":62,"endReason":"adjudicated-mate","botParams":{"pBlunder":0.02,"temperature":0.666666666666667},"opponent":"sf-elo-2200","ms":209543}
 {"game":27,"seed":2200220413,"botColor":"b","opening":"1. d4 d5 2. Nc3 Bg4","score":1,"plies":71,"endReason":"adjudicated-mate","botParams":{"pBlunder":0.02,"temperature":0.666666666666667},"opponent":"sf-elo-2200","ms":213892}
 {"game":28,"seed":2200228332,"botColor":"w","opening":"1. d4 f5 2. g3 g6 3. Bg2 Bg7 4. Nh3","score":1,"plies":92,"endReason":"adjudicated-mate","botParams":{"pBlunder":0.02,"temperature":0.666666666666667},"opponent":"sf-elo-2200","ms":191060}
+{"game":29,"seed":2200236251,"botColor":"b","opening":"1. e4 c6 2. d4 d5 3. Nd2","score":1,"plies":71,"endReason":"adjudicated-mate","botParams":{"pBlunder":0.02,"temperature":0.666666666666667},"opponent":"sf-elo-2200","ms":205144}

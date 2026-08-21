@@ -35,11 +35,11 @@ function gameOverText(position: GamePosition): string | null {
 interface PendingClassification {
   moveIndex: number;
   playedUci: string;
-  bestUci: string;
   moverColor: "w" | "b";
-  wpWhiteBefore: number;
   legalMoveCount: number;
   epdAfter: string;
+  /** Pre-move engine view; absent when the move was played before analysis produced lines. */
+  baseline: { bestUci: string; wpWhiteBefore: number } | null;
 }
 
 /**
@@ -72,25 +72,37 @@ export function AnalysisBoard() {
     else analyze(fen);
   }, [engineStatus, fen, gameOver, analyze, stop]);
 
-  // Resolve a pending live classification once the new position's analysis
-  // is deep enough (or immediately when the position after is book).
-  useEffect(() => {
+  // Resolve a pending live classification: BOOK immediately (no analysis
+  // needed), otherwise once the new position's analysis is deep enough and a
+  // pre-move baseline existed.
+  const resolvePending = useCallback(() => {
     const pending = pendingRef.current;
     if (!pending) return;
     const book = openingForEpd(pending.epdAfter) !== null;
-    const top = engine.lines[0];
-    if (!book && (engine.depth < 12 || !top)) return;
-    const wpWhiteAfter = top?.wpWhite ?? pending.wpWhiteBefore;
-    const mover = pending.moverColor;
-    const classification = classifyMove({
-      variant: "standard",
-      wpBefore: mover === "w" ? pending.wpWhiteBefore : 100 - pending.wpWhiteBefore,
-      wpAfter: mover === "w" ? wpWhiteAfter : 100 - wpWhiteAfter,
-      playedUci: pending.playedUci,
-      bestUci: pending.bestUci,
-      legalMoveCount: pending.legalMoveCount,
-      isBook: book,
-    });
+    let classification: Classification | null = null;
+    if (book) {
+      classification = "BOOK";
+    } else {
+      const top = engine.lines[0];
+      if (!pending.baseline) {
+        // No pre-move eval to compare against — no badge, honestly.
+        pendingRef.current = null;
+        return;
+      }
+      if (engine.depth < 12 || !top) return; // wait for depth
+      const mover = pending.moverColor;
+      const wpWhiteBefore = pending.baseline.wpWhiteBefore;
+      const wpWhiteAfter = top.wpWhite;
+      classification = classifyMove({
+        variant: "standard",
+        wpBefore: mover === "w" ? wpWhiteBefore : 100 - wpWhiteBefore,
+        wpAfter: mover === "w" ? wpWhiteAfter : 100 - wpWhiteAfter,
+        playedUci: pending.playedUci,
+        bestUci: pending.baseline.bestUci,
+        legalMoveCount: pending.legalMoveCount,
+        isBook: false,
+      });
+    }
     pendingRef.current = null;
     setBadges((previous) => {
       const next = [...previous];
@@ -98,6 +110,10 @@ export function AnalysisBoard() {
       return next;
     });
   }, [engine.depth, engine.lines]);
+
+  useEffect(() => {
+    resolvePending();
+  }, [resolvePending]);
 
   const refresh = useCallback(() => {
     setFen(position.fen());
@@ -110,33 +126,30 @@ export function AnalysisBoard() {
     (moveUci: string) => {
       const top = engine.lines[0];
       const moverColor = position.turn === "w" ? "b" : "w"; // already flipped by the move
-      if (top && top.firstUci) {
-        pendingRef.current = {
-          moveIndex: position.history().length - 1,
-          playedUci: moveUci,
-          bestUci: top.firstUci,
-          moverColor,
-          wpWhiteBefore: top.wpWhite,
-          legalMoveCount: 0, // filled below from the pre-move position via undo probe
-          epdAfter: position.epd(),
-        };
-        // Recover the pre-move legal move count without disturbing state.
-        const played = position.lastMove();
-        if (played && position.undo()) {
-          pendingRef.current.legalMoveCount = position.legalMoveCount();
-          position.moveUci(played.uci);
-        }
-      } else {
-        pendingRef.current = null;
+      const pending: PendingClassification = {
+        moveIndex: position.history().length - 1,
+        playedUci: moveUci,
+        moverColor,
+        legalMoveCount: 0,
+        epdAfter: position.epd(),
+        baseline: top?.firstUci ? { bestUci: top.firstUci, wpWhiteBefore: top.wpWhite } : null,
+      };
+      // Recover the pre-move legal move count without disturbing state.
+      const played = position.lastMove();
+      if (played && position.undo()) {
+        pending.legalMoveCount = position.legalMoveCount();
+        position.moveUci(played.uci);
       }
+      pendingRef.current = pending;
       setBadges((previous) => {
         const next = [...previous];
         next[position.history().length - 1] = null;
         return next;
       });
       refresh();
+      resolvePending(); // BOOK resolves without any engine output
     },
-    [engine.lines, position, refresh]
+    [engine.lines, position, refresh, resolvePending]
   );
 
   const tryMove = useCallback(
