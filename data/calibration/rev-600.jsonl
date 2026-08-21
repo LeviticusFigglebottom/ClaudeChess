@@ -1,0 +1,1 @@
+{"game":1,"seed":900010619,"botColor":"b","opening":"1. e4 e5 2. Bc4 b5 3. Bxb5 c6","score":0,"plies":23,"endReason":"adjudicated-mate","botParams":{"pBlunder":0.45,"temperature":6},"opponent":"sf-elo-1320","ms":30222,"moves":8,"blunderAvailable":0,"byKind":{"random":2,"blunder":0,"sampled":6}}
