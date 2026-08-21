@@ -21,7 +21,7 @@
  *    gate: direct bands must land within ±75 of nominal, chained bands
  *    report their measured CI with an anchor tag; ≥150 games everywhere.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { clamp } from "../src/lib/eval/winprob";
 import { combineEstimates, eloDiffFromScore, eloFromMatch } from "../src/lib/rating/elo";
@@ -232,11 +232,23 @@ if (mode === "propose") {
   };
   const results: Record<string, BandResult> = {};
 
-  const finalGames = (band: number) => readGames(path.join(dir, `final-${band}.jsonl`));
+  // A band's finals may span several shards (e.g. final-800-ladder.jsonl +
+  // final-800-direct.jsonl); the per-game opponent field keeps them distinct.
+  const finalGames = (band: number) =>
+    readdirSync(dir)
+      .filter((name) => new RegExp(`^final-${band}(-[a-z0-9]+)?\\.jsonl$`).test(name))
+      .sort()
+      .flatMap((name) => readGames(path.join(dir, name)));
 
   for (const band of BANDS.filter((b) => DIRECT_ANCHOR[b])) {
     const games = finalGames(band);
     const anchor = DIRECT_ANCHOR[band]!;
+    for (const game of games) {
+      if (game.opponent !== `sf-elo-${anchor}`) {
+        console.error(`band ${band}: expected opponent sf-elo-${anchor}, found ${game.opponent}`);
+        process.exit(1);
+      }
+    }
     const { points, n } = matchStats(games);
     if (n === 0) continue;
     const estimate = eloFromMatch(anchor, points, n);

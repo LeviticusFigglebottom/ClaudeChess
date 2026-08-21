@@ -27,10 +27,13 @@ for band in "$@"; do
       arena --bot "$band" --opponent-elo 1320 --games 200 --seed "$((band + 777))" \
         --out "data/calibration/final-$band.jsonl" ;;
     800)
+      # Two legs in SEPARATE files: appending both to one file would make the
+      # arena's line-count resume silently shift the ladder/direct mix after
+      # an interruption. calibrate-fit --finalize reads final-800*.jsonl.
       arena --bot 800 --opponent-bot 1000 --games 150 --seed 8777 \
-        --out data/calibration/final-800.jsonl
-      arena --bot 800 --opponent-elo 1320 --games 200 --seed 8778 \
-        --out data/calibration/final-800.jsonl ;;
+        --out data/calibration/final-800-ladder.jsonl
+      arena --bot 800 --opponent-elo 1320 --games 50 --seed 8778 \
+        --out data/calibration/final-800-direct.jsonl ;;
     600)
       arena --bot 600 --opponent-bot 800 --games 200 --seed 6777 \
         --out data/calibration/final-600.jsonl ;;
