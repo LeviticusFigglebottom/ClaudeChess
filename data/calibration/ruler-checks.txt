@@ -27,6 +27,24 @@ separate (z=+1.11), so longer movetime does not demonstrably rescue the
 1400 label. Combined effective strength of SF@1400 at 400ms, anchored on
 the 1320/1600 labels: ~1243 ±123 — roughly 160 Elo below its label.
 
+d18 anchor audit (pre-finals prerequisite, signed off 2026-08-21):
+pair                 score        observed   model    observed gap vs label       z
+1600 v 1800 @400ms    7/24  (0.292)  0.240  -154 ±153  vs -200   (err  +46)   +0.56
+1800 v 2000 @400ms   8.5/24 (0.354)  0.240  -105 ±145  vs -200   (err  +95)   +1.17
+2000 v 2200 @400ms   4.5/24 (0.188)  0.240  -254 ±178  vs -200   (err  -54)   -0.65
+
+Verdict: CLEAN. No leg approaches the 1400 defect's signature (z -2.78 /
++1.95 on both legs); errors alternate sign; the 1600→2200 span sums to
+-513 vs -600 labeled, within noise. At 24 games/pair this audit catches
+gross label defects only — that is its agreed scope.
+
+Prereq-1 re-anchor: formula-1400 re-probed vs SF@1320 (20 games, seed
+2400, concurrency 1): 14/20 → measured ~1467 ±166 — between the
+ruler-corrected node (1390 ±207) and the impeached label-anchored one
+(1547 ±166), and the same 14/20 score against SF@1320 that rev2 scored
+against "SF@1400", corroborating effective(1400) ≈ 1320. Refit moves
+target-1400 only: r* 1212 → 1225.
+
 Consequences recorded for the finals design:
   - SF@1400 must not be used as a calibration anchor. Band 1400 anchors
     on SF@1320 (gap 80, expected score 0.39 — good resolution).
