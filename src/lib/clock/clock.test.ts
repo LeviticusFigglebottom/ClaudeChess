@@ -61,7 +61,7 @@ describe("Simple delay (countdown starts after the delay)", () => {
 
 describe("flagging", () => {
   it("detects flagfall mid-turn and refuses to complete the move", () => {
-    let state = startClock(createClock(fischer), 0);
+    const state = startClock(createClock(fischer), 0);
     expect(isFlagged(state, 179_999)).toBe(false);
     expect(isFlagged(state, 180_000)).toBe(true);
     const flagged = applyMove(state, 200_000);

@@ -65,6 +65,7 @@ function soundForMove(move: FacadeMove, inCheckAfter: boolean): PlayableSound {
 export function useBotGame(prefs: Prefs) {
   const positionRef = useRef<GamePosition | null>(null);
   const engineRef = useRef<StockfishClient | null>(null);
+  const engineInitRef = useRef<Promise<void> | null>(null);
   const clockRef = useRef<ClockState | null>(null);
   const setupRef = useRef<GameSetup | null>(null);
   const botRef = useRef<BotDefinition | null>(null);
@@ -187,6 +188,9 @@ export function useBotGame(prefs: Prefs) {
     setBotThinking(true);
     const startedAt = Date.now();
     try {
+      // The player may move before the engine finishes booting.
+      await engineInitRef.current;
+      if (generation !== generationRef.current) return;
       const startFen = position.startFen;
       const moves = position.history().map((move) => move.uci);
       engine.setPosition(startFen, moves);
@@ -267,7 +271,12 @@ export function useBotGame(prefs: Prefs) {
 
       const engine = createEngine();
       engineRef.current = engine;
-      await engine.init({ threads: defaultThreads(), hashMb: 64, variant: setup.variant });
+      engineInitRef.current = engine.init({
+        threads: defaultThreads(),
+        hashMb: 64,
+        variant: setup.variant,
+      });
+      await engineInitRef.current;
       setEngineReady(true);
       if (position.turn !== setup.playerColor) void botTurn();
     },
