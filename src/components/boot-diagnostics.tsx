@@ -27,12 +27,12 @@ export function BootDiagnostics() {
   if (isolated === null) return null;
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs ${
-        isolated ? "bg-emerald-950 text-emerald-400" : "bg-red-950 text-red-400"
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${
+        isolated ? "border-edge text-lcd" : "border-warn-2 text-warn-2"
       }`}
       title="SharedArrayBuffer / multi-threaded engine availability"
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${isolated ? "bg-emerald-400" : "bg-red-400"}`} />
+      <span className={`h-1.5 w-1.5 rounded-full ${isolated ? "bg-lcd" : "bg-warn-2"}`} />
       {isolated ? "cross-origin isolated" : "NOT isolated"}
     </span>
   );

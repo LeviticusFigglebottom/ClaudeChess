@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ASSET_MANIFEST } from "@/lib/assets/manifest";
 
 export const metadata: Metadata = {
   title: "Licenses — GAMBIT",
@@ -80,7 +81,46 @@ export default function LicensesPage() {
           </li>
         ))}
       </ul>
-      <p className="mt-6 text-xs text-zinc-600">
+      <h2 className="mt-10 mb-2 text-lg font-semibold">Assets</h2>
+      <p className="mb-4 text-sm text-text-dim">
+        Every piece set, board theme, sound set, and font ships with a manifest entry (B2.5) —
+        no asset lands without one.
+      </p>
+      <ul className="space-y-3">
+        {ASSET_MANIFEST.map((asset) => (
+          <li key={asset.id} className="rounded-lg border border-edge px-4 py-3">
+            <div className="flex flex-wrap items-baseline gap-x-3">
+              <span className="font-medium text-text">{asset.name}</span>
+              <span className="text-xs uppercase tracking-wide text-text-faint">{asset.kind}</span>
+              {asset.licenseUrl ? (
+                <a
+                  href={asset.licenseUrl}
+                  className="text-sm text-lcd hover:underline"
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {asset.license}
+                </a>
+              ) : (
+                <span className="text-sm text-lcd">{asset.license}</span>
+              )}
+            </div>
+            <p className="mt-1 text-sm text-text-dim">
+              {asset.author} ·{" "}
+              <a
+                href={asset.sourceUrl}
+                className="underline decoration-edge-strong hover:decoration-lcd"
+                rel="noreferrer"
+                target="_blank"
+              >
+                source
+              </a>
+              {asset.note ? ` — ${asset.note}` : null}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-6 text-xs text-text-faint">
         Everything else (Next.js, React, react-chessboard, Drizzle, Supabase clients, Tailwind)
         is MIT/Apache-licensed; see package metadata in the repository.
       </p>

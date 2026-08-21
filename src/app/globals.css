@@ -1,17 +1,126 @@
+/* Fonts are self-hosted via @fontsource (OFL-1.1) — imported in layout.tsx.
+   COEP `require-corp` (spec §3.1) forbids cross-origin fetches anyway. */
 @import "tailwindcss";
 
 /*
- * System font stack only — COEP `require-corp` (spec §3.1) blocks any
- * cross-origin font without CORP headers, so nothing is fetched.
+ * B2.3 tokens. Every measurement in GAMBIT is a signed deviation from a
+ * center; the palette is a bipolar scale around --lcd (a DGT tournament
+ * clock's LCD field), not background+accent.
+ *
+ * --flag appears in exactly two places in the product: flagfall and
+ * BLUNDER. A third use is a bug.
  */
 :root {
-  --background: #0c0e12;
-  --foreground: #d7dae0;
+  --field: #171a19; /* analysis surface (ink, faintly green-shifted) */
+  --paper: #e6e7e1; /* light surface (cool bone) */
+  --lcd: #9eaf96; /* neutral center of every signed axis */
+  --white-adv: #d9dcd2; /* positive pole */
+  --black-adv: #23282e; /* negative pole */
+  --flag: #c8452d; /* clock-flag red — flagfall and BLUNDER only */
+  --brilliant: #2fa8a0; /* the one cool signal */
+
+  /* Derived tones (all mixes of the seven — no new hues) */
+  --edge: color-mix(in oklab, var(--lcd) 18%, var(--field));
+  --edge-strong: color-mix(in oklab, var(--lcd) 32%, var(--field));
+  --raise: color-mix(in oklab, var(--lcd) 7%, var(--field));
+  --text: color-mix(in oklab, var(--paper) 88%, var(--lcd));
+  --text-dim: color-mix(in oklab, var(--paper) 45%, var(--field));
+  --text-faint: color-mix(in oklab, var(--paper) 28%, var(--field));
+  --warn-1: color-mix(in oklab, var(--flag) 34%, var(--lcd)); /* INACCURACY */
+  --warn-2: color-mix(in oklab, var(--flag) 62%, var(--lcd)); /* MISTAKE */
+
+  /* B2.7 motion — reduced-motion and the "instant" pref zero these. */
+  --motion-move: 140ms;
+  --motion-capture: 80ms;
+  --motion-pulse: 200ms;
+  --motion-eval: 200ms;
+  --motion-ui: 120ms;
+}
+
+@theme inline {
+  --color-field: var(--field);
+  --color-paper: var(--paper);
+  --color-lcd: var(--lcd);
+  --color-white-adv: var(--white-adv);
+  --color-black-adv: var(--black-adv);
+  --color-flag: var(--flag);
+  --color-brilliant: var(--brilliant);
+  --color-edge: var(--edge);
+  --color-edge-strong: var(--edge-strong);
+  --color-raise: var(--raise);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-text-faint: var(--text-faint);
+  --color-warn-1: var(--warn-1);
+  --color-warn-2: var(--warn-2);
+  --font-notation: "Martian Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-body: "Inter Tight", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Animation preference (B2.5): instant / fast / normal / slow. */
+html[data-anim="instant"] {
+  --motion-move: 0ms;
+  --motion-capture: 0ms;
+  --motion-pulse: 0ms;
+  --motion-eval: 0ms;
+  --motion-ui: 0ms;
+}
+html[data-anim="fast"] {
+  --motion-move: 70ms;
+  --motion-capture: 40ms;
+  --motion-pulse: 120ms;
+  --motion-eval: 120ms;
+  --motion-ui: 60ms;
+}
+html[data-anim="slow"] {
+  --motion-move: 280ms;
+  --motion-capture: 160ms;
+  --motion-pulse: 300ms;
+  --motion-eval: 320ms;
+  --motion-ui: 200ms;
+}
+
+/* B2.7: prefers-reduced-motion replaces every animation with an instant
+   state change — not a shortened one. Wins over any data-anim value. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    --motion-move: 0ms;
+    --motion-capture: 0ms;
+    --motion-pulse: 0ms;
+    --motion-eval: 0ms;
+    --motion-ui: 0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  background: var(--field);
+  color: var(--text);
+  font-family: var(--font-body);
+}
+
+/* Notation is the primary text; prose is commentary (B2.3). */
+.notation {
+  font-family: var(--font-notation);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Check pulse (B2.7): one cycle, LCD-neutral — --flag belongs to flagfall
+   and BLUNDER alone. */
+@keyframes check-pulse {
+  0% {
+    box-shadow: inset 0 0 0 9999px color-mix(in oklab, var(--lcd) 0%, transparent);
+  }
+  50% {
+    box-shadow: inset 0 0 0 9999px color-mix(in oklab, var(--lcd) 45%, transparent);
+  }
+  100% {
+    box-shadow: inset 0 0 0 9999px color-mix(in oklab, var(--lcd) 0%, transparent);
+  }
 }

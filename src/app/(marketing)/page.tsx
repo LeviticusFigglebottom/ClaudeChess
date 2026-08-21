@@ -1,8 +1,9 @@
 import Link from "next/link";
 
 const PHASES = [
-  { name: "Phase 0 — Skeleton + engine", status: "current" },
-  { name: "Phase 1 — Play vs bot", status: "next" },
+  { name: "Phase 0 — Skeleton + engine", status: "done" },
+  { name: "Phase 0.5 — Variants, schema, rules engine", status: "done" },
+  { name: "Phase 1 — Play vs bot (standard + Chess960)", status: "current" },
   { name: "Phase 2 — Import + review pipeline", status: "planned" },
   { name: "Phase 3 — Puzzles + explorer", status: "planned" },
   { name: "Phase 4 — Multiplayer", status: "planned" },
@@ -13,27 +14,27 @@ export default function Home() {
   return (
     <div className="flex flex-col items-start gap-10 py-10">
       <div>
-        <h1 className="text-4xl font-bold tracking-tight">
+        <h1 className="text-4xl font-semibold tracking-tight text-paper">
           The clone is infrastructure.
           <br />
-          <span className="text-amber-400">The trainers are the point.</span>
+          <span className="text-lcd">The trainers are the point.</span>
         </h1>
-        <p className="mt-4 max-w-xl text-zinc-400">
-          Board, engine, matchmaking, review — solved problems, wired from boring libraries. They
-          exist here so five trainers that exist nowhere else can be built on top: eval
-          calibration, blunder fingerprinting, time allocation, repertoire EV, interrogative
-          post-mortem.
+        <p className="mt-4 max-w-xl text-text-dim">
+          A diagnostic instrument for your own play. Board, engine, and review are wired from
+          boring libraries so five trainers that exist nowhere else can be built on top:
+          eval calibration, blunder fingerprinting, time allocation, repertoire EV,
+          interrogative post-mortem.
         </p>
         <div className="mt-6 flex gap-3">
           <Link
             href="/play"
-            className="rounded-lg bg-amber-400 px-5 py-2.5 font-medium text-zinc-950 hover:bg-amber-300"
+            className="rounded-lg bg-paper px-5 py-2.5 font-medium text-field hover:bg-white-adv"
           >
-            Play on the board
+            Play
           </Link>
           <Link
             href="/engine-check"
-            className="rounded-lg border border-zinc-700 px-5 py-2.5 font-medium text-zinc-300 hover:border-zinc-500"
+            className="rounded-lg border border-edge-strong px-5 py-2.5 font-medium text-text-dim hover:border-lcd hover:text-text"
           >
             Run engine check
           </Link>
@@ -41,18 +42,32 @@ export default function Home() {
       </div>
 
       <div className="w-full max-w-xl">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+        <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-text-faint">
           Build status
         </h2>
         <ul className="space-y-2">
           {PHASES.map((phase) => (
             <li key={phase.name} className="flex items-center gap-3 text-sm">
               <span
-                className={`h-2 w-2 rounded-full ${
-                  phase.status === "current" ? "bg-amber-400" : "bg-zinc-700"
+                className={`notation w-4 text-center ${
+                  phase.status === "done"
+                    ? "text-lcd"
+                    : phase.status === "current"
+                      ? "text-paper"
+                      : "text-text-faint"
                 }`}
-              />
-              <span className={phase.status === "current" ? "text-zinc-200" : "text-zinc-500"}>
+              >
+                {phase.status === "done" ? "✓" : phase.status === "current" ? "▸" : "·"}
+              </span>
+              <span
+                className={
+                  phase.status === "current"
+                    ? "text-text"
+                    : phase.status === "done"
+                      ? "text-text-dim"
+                      : "text-text-faint"
+                }
+              >
                 {phase.name}
               </span>
             </li>
