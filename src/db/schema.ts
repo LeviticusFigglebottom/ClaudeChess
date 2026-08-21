@@ -444,6 +444,14 @@ export const challenges = pgTable(
   ]
 );
 
+/**
+ * Per-user, per-month, per-model usage accounting (A2.4 rate limits, A3.8
+ * affordability; shape per B0.4). Token counts are stable facts; cost is a
+ * function of pricing that changes — recording both keeps the affordability
+ * question answerable after a repricing. LLM rows key on the model id;
+ * non-LLM counters (imports, deep-analysis plies) accumulate on the
+ * `model = 'none'` row.
+ */
 export const usageCounters = pgTable(
   "usage_counters",
   {
@@ -452,12 +460,17 @@ export const usageCounters = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     /** First day of the month the counters cover. */
     month: date("month").notNull(),
+    /** LLM model id for LLM rows; 'none' for the non-LLM counter row. */
+    model: text("model").notNull().default("none"),
     llmCalls: integer("llm_calls").notNull().default(0),
-    llmCostCents: integer("llm_cost_cents").notNull().default(0),
+    llmInputTokens: bigint("llm_input_tokens", { mode: "number" }).notNull().default(0),
+    llmOutputTokens: bigint("llm_output_tokens", { mode: "number" }).notNull().default(0),
+    /** Micro-dollars (10^-6 USD) — integer cents rounds cheap-model calls to zero. */
+    llmCostMicros: bigint("llm_cost_micros", { mode: "number" }).notNull().default(0),
     importsRun: integer("imports_run").notNull().default(0),
     analysisPliesDeep: integer("analysis_plies_deep").notNull().default(0),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.month] })]
+  (table) => [primaryKey({ columns: [table.userId, table.month, table.model] })]
 );
 
 export const fairplayFlags = pgTable(

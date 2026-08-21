@@ -124,20 +124,33 @@ await expectRejects(
    values ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001', 'block')`
 );
 
-// usage_counters composite PK.
-await expect("usage_counters composite key upserts", async () => {
+// usage_counters composite PK (userId, month, model) with token/micros fields (B0.4).
+await expect("usage_counters per-model key upserts", async () => {
+  for (let i = 0; i < 2; i++) {
+    await db.exec(
+      `insert into usage_counters (user_id, month, model, llm_calls, llm_input_tokens, llm_output_tokens, llm_cost_micros)
+       values ('00000000-0000-0000-0000-000000000001', '2026-08-01', 'claude-sonnet-4-6', 1, 1200, 80, 4740)
+       on conflict (user_id, month, model) do update
+         set llm_calls = usage_counters.llm_calls + 1,
+             llm_input_tokens = usage_counters.llm_input_tokens + excluded.llm_input_tokens,
+             llm_output_tokens = usage_counters.llm_output_tokens + excluded.llm_output_tokens,
+             llm_cost_micros = usage_counters.llm_cost_micros + excluded.llm_cost_micros`
+    );
+  }
   await db.exec(
-    `insert into usage_counters (user_id, month, llm_calls) values ('00000000-0000-0000-0000-000000000001', '2026-08-01', 1)
-     on conflict (user_id, month) do update set llm_calls = usage_counters.llm_calls + 1`
+    `insert into usage_counters (user_id, month, imports_run) values ('00000000-0000-0000-0000-000000000001', '2026-08-01', 1)
+     on conflict (user_id, month, model) do update set imports_run = usage_counters.imports_run + 1`
   );
-  await db.exec(
-    `insert into usage_counters (user_id, month, llm_calls) values ('00000000-0000-0000-0000-000000000001', '2026-08-01', 1)
-     on conflict (user_id, month) do update set llm_calls = usage_counters.llm_calls + 1`
+  const llm = await db.query(
+    `select llm_calls, llm_cost_micros from usage_counters where user_id = '00000000-0000-0000-0000-000000000001' and model = 'claude-sonnet-4-6'`
   );
-  const result = await db.query(
-    `select llm_calls from usage_counters where user_id = '00000000-0000-0000-0000-000000000001'`
+  if (llm.rows[0].llm_calls !== 2 || Number(llm.rows[0].llm_cost_micros) !== 9480) {
+    throw new Error("per-model upsert did not accumulate");
+  }
+  const none = await db.query(
+    `select imports_run from usage_counters where user_id = '00000000-0000-0000-0000-000000000001' and model = 'none'`
   );
-  if (result.rows[0].llm_calls !== 2) throw new Error("upsert did not accumulate");
+  if (none.rows[0].imports_run !== 1) throw new Error("non-LLM counter row missing");
 });
 
 // A2.4: hard-delete cascade — the FK graph must actually let a user row go.
