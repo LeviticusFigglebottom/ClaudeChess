@@ -29,7 +29,6 @@ import {
   type BotPolicyParams,
 } from "../src/lib/engine/bot";
 import { NodeEngine } from "../src/lib/engine/node-engine";
-import { winProb } from "../src/lib/eval/winprob";
 import { mulberry32 } from "../src/lib/rng";
 import openings from "../src/db/seed/openings.json";
 

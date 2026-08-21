@@ -1,0 +1,7 @@
+{
+  "bands": {
+    "300": { "pBlunder": 0.55, "temperature": 7.0 },
+    "-100": { "pBlunder": 0.6, "temperature": 8.333 },
+    "-500": { "pBlunder": 0.6, "temperature": 9.667 }
+  }
+}
