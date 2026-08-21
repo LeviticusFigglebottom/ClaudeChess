@@ -154,5 +154,35 @@ await expect("user hard-delete cascades; audit_log survives with null user", asy
   }
 });
 
-console.log(`\nG5 PASS: ${journal.entries.length} migrations, ${statements} statements applied to an empty database, constraint probes green.`);
+// A3.4: the openings seed pipeline works against the migrated schema.
+await expect("openings seed loads and matches the Ruy Lopez", async () => {
+  const entries = JSON.parse(
+    await readFile(path.resolve("src/db/seed/openings.json"), "utf8")
+  );
+  for (let i = 0; i < entries.length; i += 500) {
+    const batch = entries.slice(i, i + 500);
+    const values = [];
+    const params = [];
+    for (const [j, e] of batch.entries()) {
+      const base = j * 5;
+      values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`);
+      params.push(e.fenKey, e.eco, e.name, e.pgn, e.ply);
+    }
+    await db.query(
+      `insert into openings (fen_key, eco, name, pgn, ply) values ${values.join(",")}
+       on conflict (fen_key) do nothing`,
+      params
+    );
+  }
+  const count = await db.query(`select count(*)::int as n from openings`);
+  if (count.rows[0].n !== entries.length) {
+    throw new Error(`expected ${entries.length} openings, table holds ${count.rows[0].n}`);
+  }
+  const ruy = await db.query(
+    `select eco, name from openings where fen_key = 'r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq -'`
+  );
+  if (ruy.rows[0]?.eco !== "C60") throw new Error(`Ruy Lopez lookup failed: ${JSON.stringify(ruy.rows)}`);
+});
+
+console.log(`\nG5 PASS: ${journal.entries.length} migrations, ${statements} statements applied to an empty database, constraint probes green, openings seeded.`);
 await db.close();
