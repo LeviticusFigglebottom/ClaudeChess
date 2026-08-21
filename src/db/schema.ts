@@ -3,18 +3,30 @@ import {
   bigint,
   bigserial,
   boolean,
+  char,
+  check,
+  customType,
+  date,
   doublePrecision,
   index,
   integer,
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+
+/** Case-insensitive text (Postgres citext extension — enabled in migration 0001). */
+const citext = customType<{ data: string }>({
+  dataType() {
+    return "citext";
+  },
+});
 
 /**
  * Data model (spec §5). The load-bearing table is `plies`: one canonical
@@ -27,6 +39,29 @@ import {
 export const gameSourceEnum = pgEnum("game_source", ["local", "online", "chesscom", "lichess"]);
 
 export const colorEnum = pgEnum("color", ["white", "black"]);
+
+/**
+ * Rules variants (addendum A1.4). Mirrors VARIANTS in src/lib/chess/variant.ts
+ * (kept literal here so drizzle-kit needs no app imports; a unit test pins
+ * the two lists together). Every analysis, classification, and trainer query
+ * MUST filter on variant — a chess960 blunder and a standard blunder are
+ * different populations and are never pooled.
+ */
+export const variantEnum = pgEnum("variant", [
+  "standard",
+  "chess960",
+  "threecheck",
+  "koth",
+  "crazyhouse",
+]);
+
+export const tierEnum = pgEnum("tier", ["free", "plus"]);
+
+export const relationshipKindEnum = pgEnum("relationship_kind", ["friend", "follow", "block"]);
+
+export const relationshipStatusEnum = pgEnum("relationship_status", ["pending", "accepted"]);
+
+export const challengeColorEnum = pgEnum("challenge_color", ["white", "black", "random"]);
 
 export const timeControlBucketEnum = pgEnum("time_control_bucket", [
   "bullet",
@@ -84,13 +119,39 @@ export const postmortemVerdictEnum = pgEnum("postmortem_verdict", [
   "SOUND_BUT_INCOMPLETE",
 ]);
 
-export const users = pgTable("users", {
-  /** Mirrors the Supabase auth.users id. */
-  id: uuid("id").primaryKey(),
-  handle: text("handle").notNull().unique(),
-  email: text("email").notNull().unique(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const users = pgTable(
+  "users",
+  {
+    /** Mirrors the Supabase auth.users id. */
+    id: uuid("id").primaryKey(),
+    /**
+     * Case-insensitive unique, 3–20 chars (checked below). The reserved-word
+     * list ("admin", "mod", route names, ...) is enforced at the application
+     * layer where it can evolve without migrations.
+     */
+    handle: citext("handle").notNull().unique(),
+    /** Null for anonymous accounts (A2.1 — anonymous-first). */
+    email: text("email").unique(),
+    isAnonymous: boolean("is_anonymous").notNull().default(false),
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    displayName: text("display_name"),
+    avatarUrl: text("avatar_url"),
+    countryCode: char("country_code", { length: 2 }),
+    bio: text("bio"),
+    /** FM/IM/GM etc — admin-granted only, never self-service. */
+    title: text("title"),
+    tier: tierEnum("tier").notNull().default("free"),
+    prefersBoardTheme: text("prefers_board_theme"),
+    prefersPieceSet: text("prefers_piece_set"),
+    /** Soft delete with a 30-day recovery window, then hard cascade (A2.4). */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  },
+  (table) => [
+    check("users_handle_length", sql`char_length(${table.handle}) between 3 and 20`),
+  ]
+);
 
 export const ratings = pgTable(
   "ratings",
@@ -98,13 +159,17 @@ export const ratings = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    /** A1.4: the rating key is (userId, variant, timeControl) — 960 rating is separate. */
+    variant: variantEnum("variant").notNull().default("standard"),
     timeControl: timeControlBucketEnum("time_control").notNull(),
     rating: doublePrecision("rating").notNull(),
     rd: doublePrecision("rd").notNull(),
     volatility: doublePrecision("volatility").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("ratings_user_tc_idx").on(table.userId, table.timeControl)]
+  (table) => [
+    uniqueIndex("ratings_user_variant_tc_idx").on(table.userId, table.variant, table.timeControl),
+  ]
 );
 
 export const games = pgTable(
@@ -114,6 +179,11 @@ export const games = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    variant: variantEnum("variant").notNull().default("standard"),
+    /** Null for standard; required for chess960/custom starts (A1.4). */
+    startFen: text("start_fen"),
+    /** Scharnagl index 0–959 for chess960, null otherwise. */
+    startPositionId: integer("start_position_id"),
     source: gameSourceEnum("source").notNull(),
     /** Game id on the source platform (chess.com uuid / lichess id). */
     externalId: text("external_id"),
@@ -183,6 +253,9 @@ export const plies = pgTable(
     isCritical: boolean("is_critical").notNull().default(false),
 
     analyzedAtDepth: integer("analyzed_at_depth"),
+
+    /** Variant-specific state (check counts, pockets, ...); null for standard (A1.4). */
+    variantStateJson: jsonb("variant_state_json").$type<Record<string, unknown>>(),
   },
   (table) => [
     uniqueIndex("plies_game_ply_idx").on(table.gameId, table.ply),
@@ -300,4 +373,142 @@ export const puzzleAttempts = pgTable(
     attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("puzzle_attempts_user_idx").on(table.userId, table.attemptedAt)]
+);
+
+// --- Account system (addendum A2.2) ---
+
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    deviceLabel: text("device_label"),
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (table) => [index("sessions_user_idx").on(table.userId, table.createdAt)]
+);
+
+export const relationships = pgTable(
+  "relationships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    targetUserId: uuid("target_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** block must actually block: no challenges, no matchmaking pairing, no DMs. */
+    kind: relationshipKindEnum("kind").notNull(),
+    /** 'pending' only for friend requests; follow/block are immediate. */
+    status: relationshipStatusEnum("status").notNull().default("accepted"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("relationships_user_target_kind_idx").on(
+      table.userId,
+      table.targetUserId,
+      table.kind
+    ),
+    index("relationships_target_idx").on(table.targetUserId, table.kind),
+    check("relationships_no_self", sql`${table.userId} <> ${table.targetUserId}`),
+  ]
+);
+
+export const challenges = pgTable(
+  "challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fromUserId: uuid("from_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Null + token = shareable open challenge link. */
+    toUserId: uuid("to_user_id").references(() => users.id, { onDelete: "cascade" }),
+    variant: variantEnum("variant").notNull().default("standard"),
+    /** Raw time control, e.g. "300+3". */
+    timeControl: text("time_control").notNull(),
+    rated: boolean("rated").notNull().default(false),
+    color: challengeColorEnum("color").notNull().default("random"),
+    token: text("token").unique(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index("challenges_to_user_idx").on(table.toUserId, table.expiresAt),
+    index("challenges_from_user_idx").on(table.fromUserId, table.createdAt),
+  ]
+);
+
+export const usageCounters = pgTable(
+  "usage_counters",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** First day of the month the counters cover. */
+    month: date("month").notNull(),
+    llmCalls: integer("llm_calls").notNull().default(0),
+    llmCostCents: integer("llm_cost_cents").notNull().default(0),
+    importsRun: integer("imports_run").notNull().default(0),
+    analysisPliesDeep: integer("analysis_plies_deep").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.month] })]
+);
+
+export const fairplayFlags = pgTable(
+  "fairplay_flags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    gameId: uuid("game_id").references(() => games.id, { onDelete: "cascade" }),
+    /** e.g. 'engine_correlation', 'accuracy_outlier', 'movetime_entropy', 'tab_blur'. */
+    signal: text("signal").notNull(),
+    score: real("score").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    outcome: text("outcome"),
+  },
+  (table) => [index("fairplay_user_idx").on(table.userId, table.createdAt)]
+);
+
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    /** Kept (nulled) after account hard-delete — audit history survives. */
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    /** e.g. 'auth.signin', 'rating.adjust', 'account.delete'. */
+    action: text("action").notNull(),
+    meta: jsonb("meta").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("audit_log_user_idx").on(table.userId, table.createdAt)]
+);
+
+// --- Openings (addendum A3.4) ---
+
+/**
+ * Lichess chess-openings dataset, keyed by normalized FEN (epd: board, turn,
+ * castling, ep — no move counters). Seeded from the vendored TSVs by
+ * scripts/seed-openings.mjs; matching walks a game's positions and the
+ * deepest hit wins. Standard chess only — chess960 games never match.
+ */
+export const openings = pgTable(
+  "openings",
+  {
+    fenKey: text("fen_key").primaryKey(),
+    eco: text("eco").notNull(),
+    name: text("name").notNull(),
+    pgn: text("pgn").notNull(),
+    /** Ply depth of this line — the deepest-hit tiebreaker. */
+    ply: integer("ply").notNull(),
+  },
+  (table) => [index("openings_eco_idx").on(table.eco)]
 );

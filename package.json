@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "gate": "node scripts/gate-check.mjs",
-    "engine:refresh": "node scripts/fetch-engine.mjs"
+    "engine:refresh": "node scripts/fetch-engine.mjs",
+    "db:verify": "node scripts/verify-migrations.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
@@ -26,6 +27,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
     "@eslint/eslintrc": "^3.3.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.18.0",

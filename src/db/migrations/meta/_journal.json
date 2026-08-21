@@ -8,6 +8,20 @@
       "when": 1787319882436,
       "tag": "0000_sparkling_slapstick",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787323586276,
+      "tag": "0001_enable-citext",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787323721051,
+      "tag": "0002_moaning_hannibal_king",
+      "breakpoints": true
     }
   ]
 }
