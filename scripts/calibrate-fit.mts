@@ -27,10 +27,13 @@ import { clamp } from "../src/lib/eval/winprob";
 import { combineEstimates, eloDiffFromScore, eloFromMatch } from "../src/lib/rating/elo";
 
 const BANDS = [600, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200];
+// 1400 anchors on SF@1320, NOT SF@1400: the ruler audit measured the 1400
+// label ~160 Elo weak at 400ms (data/calibration/ruler-checks.txt). The 80
+// gap gives expected score 0.39 — better resolution than same-label anyway.
 const DIRECT_ANCHOR: Record<number, number> = {
   1000: 1320,
   1200: 1320,
-  1400: 1400,
+  1400: 1320,
   1600: 1600,
   1800: 1800,
   2000: 2000,
@@ -76,6 +79,21 @@ const dir = path.resolve("data/calibration");
 if (mode === "propose") {
   const prefixIndex = process.argv.indexOf("--prefix");
   const prefix = prefixIndex === -1 ? "rev2-" : (process.argv[prefixIndex + 1] ?? "rev2-");
+  // --override <band>=<file> (repeatable): substitute one band's probe shard,
+  // e.g. the formula-1400 node re-anchored on SF@1320 after the ruler audit
+  // impeached the 1400 label. The file's own opponent field sets the anchor.
+  const overrides = new Map<number, string>();
+  for (let i = 0; i < process.argv.length; i++) {
+    if (process.argv[i] === "--override") {
+      const spec = process.argv[i + 1] ?? "";
+      const eq = spec.indexOf("=");
+      if (eq === -1) {
+        console.error(`bad --override "${spec}" (want <band>=<file>)`);
+        process.exit(1);
+      }
+      overrides.set(Number(spec.slice(0, eq)), spec.slice(eq + 1));
+    }
+  }
 
   // Measured strength of the FORMULA params at each probed band. The anchor
   // comes from each shard's own opponent field (probes below 1320 play the
@@ -94,7 +112,8 @@ if (mode === "propose") {
   const segmentOf = (band: number): "d14" | "d18" => (band < 1600 ? "d14" : "d18");
   const points: ProbePoint[] = [];
   for (const band of BANDS) {
-    const games = readGames(path.join(dir, `${prefix}${band}.jsonl`));
+    const shard = overrides.get(band) ?? path.join(dir, `${prefix}${band}.jsonl`);
+    const games = readGames(shard);
     if (games.length === 0) continue;
     const anchorMatch = games[0]!.opponent.match(/^sf-elo-(\d+)$/);
     if (!anchorMatch) continue;
