@@ -1,0 +1,1 @@
+ALTER TABLE "usage_counters" DROP COLUMN "llm_cost_cents";
