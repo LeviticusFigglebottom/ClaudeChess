@@ -1,0 +1,40 @@
+Ruler self-consistency audit of the calibration reference
+==========================================================
+Date: 2026-08-21 (UTC). Engine: vendored Stockfish 18 Lite, single-thread
+CLI build, UCI_LimitStrength anchors, hash 32MB. 24 games per pair,
+alternating colors, seeded 4-8 ply opening book (scripts/ruler-check.mts).
+Purpose: internal additivity of the UCI_Elo label scale at the arena's
+reference movetime — a necessary condition for using the labels as
+calibration anchors. Elo gaps and CIs computed with src/lib/rating/elo.ts.
+
+pair                 score        observed   model    observed gap vs label       z
+1320 v 1400 @400ms   14/24  (0.583)  0.387   +58 ±141  vs  -80   (err +138)   +1.95
+1400 v 1600 @400ms    2/24  (0.083)  0.240  -417 ±251  vs -200   (err -217)   -2.78
+1320 v 1600 @400ms   2.5/24 (0.104)  0.166  -374 ±228  vs -280   (err  -94)   -1.00
+1400 v 2000 @400ms    1/24  (0.042)  0.031  -545 ±348  vs -600   (err  +55)   +0.27
+1320 v 1400 @1000ms  12/24  (0.500)  0.387    0 ±139   vs  -80   (err  +80)   +1.11
+
+Triangle closure at 400ms (1320-1400 + 1400-1600 vs direct 1320-1600):
+  (+58) + (-417) = -358 ±288 vs -374 ±228 measured directly — closes to
+  within 16 Elo. The three pairs are internally consistent with each other.
+
+Conclusion: the anomaly localizes to the 1400 LABEL, not to measurement
+noise or the movetime alone. SF@1400 underperforms its label against BOTH
+neighbors (significantly vs 1600, z=-2.78; marginally vs 1320, z=+1.95),
+while the 1320 and 1600 labels are mutually consistent (z=-1.00). At
+1000ms the floor pair improves (inversion gone) but still fails to
+separate (z=+1.11), so longer movetime does not demonstrably rescue the
+1400 label. Combined effective strength of SF@1400 at 400ms, anchored on
+the 1320/1600 labels: ~1243 ±123 — roughly 160 Elo below its label.
+
+Consequences recorded for the finals design:
+  - SF@1400 must not be used as a calibration anchor. Band 1400 anchors
+    on SF@1320 (gap 80, expected score 0.39 — good resolution).
+  - The rev2 curve node for formula-1400 (measured 1547 ±166 vs the 1400
+    label) is impeached: re-anchored on effective(1400)=1243 ±123 it
+    becomes ~1390 ±207. Re-probe formula-1400 vs SF@1320 before finals
+    rather than correcting algebraically.
+  - Bands 600-1200 measured vs SF@1320 are unaffected.
+  - The unaudited d18 anchor labels (1800/2000/2200) should get the same
+    adjacent-pair audit (1600-1800, 1800-2000, 2000-2200) before the
+    d18 finals spend commits against them.
