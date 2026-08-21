@@ -2,7 +2,7 @@ import type { Move, Position, Role, SquareName } from "chessops";
 import { castlingSide, normalizeMove } from "chessops/chess";
 import { perft as chessopsPerft } from "chessops/debug";
 import { makeFen, parseFen } from "chessops/fen";
-import { makeSan } from "chessops/san";
+import { makeSan, parseSan } from "chessops/san";
 import {
   charToRole,
   kingCastlesTo,
@@ -162,6 +162,13 @@ export class GamePosition {
   /** Applies a UCI move (accepts both castling encodings). */
   moveUci(uci: string): FacadeMove | null {
     const move = parseUci(uci);
+    if (!move || !("from" in move)) return null;
+    return this.applyMove(move);
+  }
+
+  /** Applies a SAN move ("Nf3", "O-O", "exd8=Q+"); null when not legal here. */
+  moveSan(san: string): FacadeMove | null {
+    const move = parseSan(this.pos, san);
     if (!move || !("from" in move)) return null;
     return this.applyMove(move);
   }
