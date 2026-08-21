@@ -1,0 +1,16 @@
+{
+  "method": "UNCALIBRATED PLACEHOLDER — spec §6 formula priors. The Phase 1 gate replaces this file with values fitted from >=200 self-play games per band vs reference Stockfish (UCI_Elo anchors + ladder for sub-1320 bands). Uncalibrated constants do not ship.",
+  "referenceMovetimeMs": null,
+  "fittedAt": null,
+  "bands": {
+    "600": { "pBlunder": 0.45, "temperature": 6.0, "measuredElo": null, "ci95": null, "games": 0 },
+    "800": { "pBlunder": 0.45, "temperature": 5.333, "measuredElo": null, "ci95": null, "games": 0 },
+    "1000": { "pBlunder": 0.317, "temperature": 4.667, "measuredElo": null, "ci95": null, "games": 0 },
+    "1200": { "pBlunder": 0.25, "temperature": 4.0, "measuredElo": null, "ci95": null, "games": 0 },
+    "1400": { "pBlunder": 0.183, "temperature": 3.333, "measuredElo": null, "ci95": null, "games": 0 },
+    "1600": { "pBlunder": 0.117, "temperature": 2.667, "measuredElo": null, "ci95": null, "games": 0 },
+    "1800": { "pBlunder": 0.05, "temperature": 2.0, "measuredElo": null, "ci95": null, "games": 0 },
+    "2000": { "pBlunder": 0.02, "temperature": 1.333, "measuredElo": null, "ci95": null, "games": 0 },
+    "2200": { "pBlunder": 0.02, "temperature": 0.667, "measuredElo": null, "ci95": null, "games": 0 }
+  }
+}
