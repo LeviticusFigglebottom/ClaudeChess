@@ -53,7 +53,7 @@ async function download(url, dest) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
     return;
-  } catch (err) {
+  } catch {
     // Proxied environments: curl honors HTTPS_PROXY/CA bundle where undici may not.
     execFileSync("curl", ["-sSL", "--fail", "-o", dest, url], { stdio: "pipe" });
   }

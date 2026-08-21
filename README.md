@@ -1,62 +1,49 @@
 # GAMBIT
 
-A chess.com-parity platform whose *actual* product is a set of trainers that don't exist anywhere else. The clone is infrastructure; the trainers are the point. Full design: [`docs/SPEC.md`](docs/SPEC.md).
+A chess.com-parity platform whose *actual* product is a set of trainers that don't exist anywhere else. The clone is infrastructure; the trainers are the point. Full design: [`docs/SPEC.md`](docs/SPEC.md) + [`docs/ADDENDUM_A.md`](docs/ADDENDUM_A.md).
 
-## Status: Phase 0 complete ✅
+## Status: Phase 0.5 complete ✅ (Phase 0 ✅)
 
-Skeleton + engine (spec §8, Phase 0). Every gate condition verified against a production build (`next build && next start`) driven headlessly in Chromium:
-
-| Gate (spec §8) | Result |
+| Phase 0.5 gate | Measured result |
 |---|---|
-| `crossOriginIsolated === true` | ✅ true (local prod build; **re-verify on the Vercel preview** — see below) |
-| Engine reaches depth 20 on startpos < 3s | ✅ **1062ms** — Stockfish 18 Lite WASM **multi-threaded**, 3 threads / 4 cores, ~2 Mnps |
-| Sign-normalization unit test | ✅ plus a live engine check: black-to-move losing position, raw `cp -1130` (side-to-move POV) → White-POV wp 97.5% |
-| perft(4) = 197,281 | ✅ (perft 1–4 all pinned in `src/lib/chess/perft.test.ts`) |
+| **G1** — all ported tests green on chessops, no assertion weakened | ✅ 92/92 (the 57 ported intact + 35 new for 960/facade/openings/schema) |
+| **G2** — perft(4): SP518 + five random 960 SPs, castling exercised | ✅ SP518=197,281; SP266=169,678; SP642=168,662; SP144=200,154; SP636=165,921; SP773=167,419 — chessops and Stockfish 18 `go perft` agree on every FEN, including castle-ready reductions where castling is proven inside the tree (see below) |
+| **G3** — X-FEN round-trip, 20 random 960 positions, adjacent K+R included | ✅ 20/20 lossless (superset: all 960 SPs round-trip; 20-sample includes adjacent-K/R positions) |
+| **G4** — engine sane on 960 with `UCI_Chess960`, sign normalization holds | ✅ SP266 X-FEN `HBhb` accepted → White-POV +45cp at depth 14; queen-odds probe: raw `cp −719` (side-to-move) → White-POV wp 93.4% |
+| **G5** — migrations apply to empty DB, `drizzle-kit check` clean | ✅ 3 migrations / 90 statements on empty Postgres (PGlite + citext) + constraint probes + openings seed; `drizzle-kit check`: clean |
+| **G6** — typecheck + production build, zero warnings | ✅ tsc clean, eslint zero problems, `next build` clean |
 
-Also passing: Glicko-2 vs. Glickman's paper example (1464.06 / 151.52 / 0.05999), classification threshold suite (§4.2–4.4), UCI parser against captured engine output. 57/57 tests.
+Castle-ready perft evidence (`node scripts/perft960-report.mjs`): each SP is also verified on a reduction with back ranks stripped to king + rooks, where a castling move provably exists at the root — SP518=369,906; SP266=318,333; SP642=317,211; SP144=314,956; SP636=366,272; SP773=366,277 nodes, all agreeing across both implementations.
 
-### Verifying the gate yourself
-
-```bash
-npm run build && npm run start &
-npm run gate                                   # drives /engine-check headlessly, exits non-zero on failure
-npm run gate -- --url https://<preview>.vercel.app   # same, against a deployed preview
-```
-
-Or just open **`/engine-check`** in a browser — every row must be green. The deployed-preview run is the one that actually closes the Phase 0 gate (§3.1); the headers are set in `next.config.ts` and apply on Vercel unchanged, but *prove it* on the preview URL before building Phase 1.
+Phase 0 gate results (still green on the current build): `crossOriginIsolated === true`, Stockfish 18 Lite WASM **multi-threaded**, depth 20 on startpos in ~1.1–1.6s, live sign checks, perft(4)=197,281. Re-verify any deploy at **`/engine-check`** or `npm run gate -- --url <url>`.
 
 ## Quick start
 
 ```bash
-npm install        # postinstall fetches Stockfish WASM (~14.5MB) into public/engine
-cp .env.example .env.local   # fill in when Supabase/DB work starts; not needed for Phase 0
-npm run dev        # http://localhost:3000 — /play has the board + streaming analysis
-npm test           # vitest: perft, POV signs, classification, Glicko-2, accuracy, UCI
+npm install          # engine binaries are vendored in-repo — nothing fetched
+npm run dev          # http://localhost:3000
+npm test             # vitest — 92 tests incl. chessops⇄Stockfish perft cross-checks
+npm run db:verify    # apply all migrations + seed to an empty in-process Postgres
+npm run gate         # headless browser gate vs a running server (build+start first)
 ```
 
-`crossOriginIsolated` is logged to the console on boot and shown as a badge in the footer. If it ever reads false, stop and fix headers before anything else (spec §3.1).
+## Architecture
 
-## What's here
+- **Rules** — `chessops` (Lichess's rules library) behind the facade `src/lib/chess/position.ts`, the only place its Result handling and Move/Square encodings live. Castling conventions are fixed there once: internally king-takes-rook; standard games emit classic UCI (e1g1) and accept both encodings; **chess960 FENs always serialize castling as X-FEN file letters (`HAha`), never `KQkq`**.
+- **Chess960** — Scharnagl generation 0–959 (`src/lib/chess/chess960.ts`), SP518 = standard array, structural rules verified for all 960. UI castling for 960 is offered as king-takes-rook only (tap king, tap rook — drag is ambiguous when adjacent).
+- **Engine** — Stockfish 18 Lite WASM (MT + single-thread fallback), **vendored in `public/engine/`** (no CDN in any build path; `npm run engine:refresh` is the manual, hash-verified upgrade tool). §3.2 `EngineClient` contract; `init()` takes `variant` — chess960 sets `UCI_Chess960`, variants vanilla Stockfish can't evaluate (KotH, three-check, crazyhouse) are **rejected at init** rather than returning meaningless evals; Fairy-Stockfish lands behind that same interface in Phase 4.5.
+- **Eval** — cp→win-prob, the single POV-normalization boundary, §4 classification. `BOOK` can only fire for `variant === 'standard'`.
+- **DB** — 17 tables. A1.4: `games.variant/startFen/startPositionId`, `plies.variantStateJson`, ratings keyed `(userId, variant, timeControl)`. A2.2: anonymous-first users (nullable email, citext handle 3–20), sessions, relationships (block-capable), challenges (open-link token), usage_counters, fairplay_flags, audit_log. **Every trainer/classification query filters on `variant` — 960 and standard are never pooled.**
+- **Openings (A3.4)** — Lichess chess-openings TSVs vendored → compiled to an epd-keyed dataset (3,810 positions, every PGN replayed through chessops at build); `openingForGame` walks a game's positions deepest-first; transposition-aware; standard-only. `openings` table seeds idempotently via `db:seed:openings`.
+- **Licensing (A0.2)** — `NOTICE` + `/licenses`: Stockfish and chessops are GPL-3; the combined distributed work is GPL-3.0-or-later.
 
-- **Engine** (`src/lib/engine`) — Stockfish 18 Lite (NNUE, multi-threaded WASM) behind the spec §3.2 `EngineClient` contract. UCI strings never leave this module. Single-threaded fallback auto-selected when isolation is missing (and surfaced loudly as a gate failure).
-- **Eval** (`src/lib/eval`) — cp→win-prob logistic (§4.1), **the single side-to-move→White-POV normalization boundary** (§3.2 critical note), full move classification (§4.2–4.4: loss bands, BEST, GREAT, BRILLIANT, MISS, BOOK hook), accuracy + volatility weighting (§4.5), analysis presets (§4.6).
-- **Chess utils** (`src/lib/chess`) — FEN helpers, static material count (feeds §4.3 sacrifice detection), perft, UCI-PV→SAN rendering.
-- **Rating** (`src/lib/rating`) — Glicko-2 per the paper; τ=0.5; batch-per-period by design (wiring in Phase 1).
-- **Flags** (`src/lib/flags`) — all six §9 trainer flags, env-driven, default off.
-- **DB** (`src/db`) — full §5 Drizzle schema (10 tables, `plies` is the canonical analysis record) + generated SQL migration, including the partial index on MISTAKE/BLUNDER plies. Lazy Postgres client; nothing needs a live DB yet.
-- **UI** — `/play`: free board (react-chessboard v4 + chess.js legality), drag **and** tap-tap input (§10 mobile), last-move/legal-target highlights, streaming depth-18 MultiPV-3 analysis with White-POV evals, eval bar, move list. `/engine-check`: the gate diagnostic page.
+## Known deliberate deviations
 
-## Deliberate deviations from the spec (all boring-in-spirit)
+1. `stockfish.wasm`→ Stockfish 18 Lite (current NNUE MT successor); binaries vendored per A0.1.
+2. No `src/workers/stockfish.worker.ts` — the engine script is the worker; the §3.2 contract lives in `src/lib/engine`. Engine pool + `analysis.worker.ts` land with Phase 2.
+3. One hand-corrected line in generated migration 0002 (drizzle-kit emits custom types as `"undefined"."citext"` in ALTER statements) — commented in place, snapshot unaffected.
+4. A3.4 "import at build time into a table": implemented as build-time compilation to a committed dataset + an idempotent seed script — Vercel builds have no database connection, and the matcher needs no table at runtime.
 
-1. **Engine binaries are fetched, not vendored**: the `stockfish` npm tarball is ~250MB (bundles 113MB full-net builds). `scripts/fetch-engine.mjs` (postinstall) pulls exactly the 4 lite-build files from the npm CDN with pinned sha256 hashes into `public/engine/` (gitignored). Stockfish **18** Lite is the current NNUE multi-threaded successor of the spec's `stockfish.wasm`.
-2. **No `/src/workers/stockfish.worker.ts` wrapper**: the engine script itself is the worker (`new Worker('/engine/stockfish-18-lite.js')`) — it spawns its own pthread sub-workers. Wrapping it in a bundled TS worker adds a fragile layer to the highest-risk item for zero benefit; the §3.2 contract and UCI containment live in `src/lib/engine` instead. `analysis.worker.ts` (batch orchestration) arrives with Phase 2, where it has a job.
-3. **Engine pool (§3.3) deferred to Phase 2** with the batch review pipeline that exercises it — no dead untested code in Phase 0.
-4. **react-chessboard pinned to v4.7.3** per spec (v5 is a breaking rewrite; revisit only with a reason).
+## Roadmap (addendum A4)
 
-## Roadmap (spec §8)
-
-- **Phase 1 — next**: play vs Tier-A bots (shallow-good/deep-bad sampling, §6), clocks, Glicko-2 wiring. Stops at the bot calibration gate (±75 Elo over ≥200 self-play games per band). *That gate is the one to not skip.*
-- Phase 2: chess.com/Lichess import + batch review pipeline populating `plies`.
-- Phase 3: puzzles + opening explorer proxy.
-- Phase 4: multiplayer (Supabase Realtime, server-authoritative clock).
-- Phase 5: the five trainers, flag-gated (§9) — the reason this repo exists.
+Phase 1 (next): play vs Tier-A bots **including Chess960**; stops at the bot-calibration gate (±75 Elo, ≥200 games/band — the gate not to skip). Then 1.5 accounts (anonymous-first), 2 import+review (+tablebase), 2.5 analysis board, 3 puzzles/explorer, 4 multiplayer, 4.5 variants w/ Fairy-Stockfish (`FF_VARIANTS`), 5 the trainers.
