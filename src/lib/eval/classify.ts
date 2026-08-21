@@ -1,3 +1,5 @@
+import type { VariantId } from "@/lib/chess/variant";
+
 /**
  * Move classification (spec §4.2–4.4).
  *
@@ -56,6 +58,12 @@ export const MISS_RULES = {
 } as const;
 
 export interface ClassifyInput {
+  /**
+   * Rules variant of the game this ply belongs to (addendum A1.4). BOOK can
+   * only ever fire for standard — chess960 has no book by construction, and
+   * variant blunders are a separate population from standard blunders.
+   */
+  variant: VariantId;
   /** Mover-POV win probability before the move (0..100). */
   wpBefore: number;
   /** Mover-POV win probability after the move (0..100). */
@@ -103,7 +111,7 @@ export function classifyMove(input: ClassifyInput): Classification {
   const loss = input.wpBefore - input.wpAfter;
   const playedBest = input.playedUci === input.bestUci;
 
-  if (input.isBook) return "BOOK";
+  if (input.isBook && input.variant === "standard") return "BOOK";
 
   if (isBrilliant(input, loss)) return "BRILLIANT";
 

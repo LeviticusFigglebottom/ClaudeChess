@@ -7,7 +7,7 @@ import {
   type StockfishClient,
 } from "@/lib/engine";
 import { ANALYSIS_SETTINGS, normalizeInfo, winProbFromEval, type WhitePovEval } from "@/lib/eval";
-import { sideToMove } from "@/lib/chess";
+import { sideToMove, type VariantId } from "@/lib/chess";
 import { pvToSan } from "@/lib/chess/san";
 
 export interface AnalysisLine {
@@ -32,8 +32,10 @@ export type EngineStatus = "booting" | "ready" | "error";
  * Owns one interactive StockfishClient for the lifetime of the component and
  * streams review-depth analysis (spec §4.6) of whatever FEN was last handed
  * to `analyze`. All evals leave this hook already normalized to White-POV.
+ * The variant is fixed per engine instance (spec A0.3: it is an init-time
+ * engine option).
  */
-export function useEngineAnalysis() {
+export function useEngineAnalysis(gameVariant: VariantId = "standard") {
   const clientRef = useRef<StockfishClient | null>(null);
   const generationRef = useRef(0);
   const [status, setStatus] = useState<EngineStatus>("booting");
@@ -49,7 +51,7 @@ export function useEngineAnalysis() {
     const threads = defaultThreads();
 
     client
-      .init({ threads, hashMb: 64 })
+      .init({ threads, hashMb: 64, variant: gameVariant })
       .then(() => {
         if (disposed) return;
         setMeta({ name: client.engineName, variant: client.build.variant, threads });
@@ -65,7 +67,7 @@ export function useEngineAnalysis() {
       client.quit();
       clientRef.current = null;
     };
-  }, []);
+  }, [gameVariant]);
 
   const analyze = useCallback(
     (fen: string) => {
@@ -90,7 +92,7 @@ export function useEngineAnalysis() {
             depth: info.depth,
             evaluation,
             wpWhite: winProbFromEval(evaluation),
-            pvSan: pvToSan(fen, info.pv),
+            pvSan: pvToSan(fen, info.pv, gameVariant),
             firstUci: info.pv[0] ?? "",
           });
           setLines([...byMultipv.values()].sort((a, b) => a.multipv - b.multipv));
@@ -99,7 +101,7 @@ export function useEngineAnalysis() {
         }
       })();
     },
-    [status]
+    [status, gameVariant]
   );
 
   const stop = useCallback(() => {

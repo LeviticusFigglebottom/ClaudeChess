@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Chess, type Square } from "chess.js";
 import { Chessboard } from "react-chessboard";
+import { GamePosition } from "@/lib/chess";
 import { useEngineAnalysis } from "./use-engine-analysis";
 import type { WhitePovEval } from "@/lib/eval";
 
@@ -14,33 +14,35 @@ function formatEval(evaluation: WhitePovEval): string {
   return `${pawns >= 0 ? "+" : ""}${pawns.toFixed(2)}`;
 }
 
-function gameOverText(chess: Chess): string | null {
-  if (chess.isCheckmate()) {
-    return `Checkmate — ${chess.turn() === "w" ? "Black" : "White"} wins`;
+function gameOverText(position: GamePosition): string | null {
+  if (position.isCheckmate()) {
+    return `Checkmate — ${position.turn === "w" ? "Black" : "White"} wins`;
   }
-  if (chess.isStalemate()) return "Draw — stalemate";
-  if (chess.isThreefoldRepetition()) return "Draw — threefold repetition";
-  if (chess.isInsufficientMaterial()) return "Draw — insufficient material";
-  if (chess.isDraw()) return "Draw — fifty-move rule";
+  if (position.isStalemate()) return "Draw — stalemate";
+  if (position.isThreefold()) return "Draw — threefold repetition";
+  if (position.isInsufficientMaterial()) return "Draw — insufficient material";
+  if (position.isFiftyMoves()) return "Draw — fifty-move rule";
   return null;
 }
 
 /**
- * Free board for Phase 0: both sides playable, legality enforced by chess.js,
- * streaming engine analysis alongside. Bot opponents arrive in Phase 1.
- * Move input works by drag AND tap-tap (spec §10 mobile requirement).
+ * Free board for Phase 0: both sides playable, legality enforced by the
+ * chessops facade, streaming engine analysis alongside. Bot opponents arrive
+ * in Phase 1. Move input works by drag AND tap-tap (spec §10 mobile).
  */
 export function PlayBoard() {
-  const chessRef = useRef(new Chess());
-  const chess = chessRef.current;
-  const [fen, setFen] = useState(chess.fen());
+  const positionRef = useRef<GamePosition | null>(null);
+  positionRef.current ??= GamePosition.initial();
+  const position = positionRef.current;
+
+  const [fen, setFen] = useState(position.fen());
   const [history, setHistory] = useState<string[]>([]);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
-  const [selected, setSelected] = useState<Square | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
   const engine = useEngineAnalysis();
 
-  const gameOver = gameOverText(chess);
+  const gameOver = gameOverText(position);
   const { status: engineStatus, analyze, stop } = engine;
 
   // Keep the engine pointed at the current position (restart on every change).
@@ -51,41 +53,38 @@ export function PlayBoard() {
   }, [engineStatus, fen, gameOver, analyze, stop]);
 
   const refresh = useCallback(() => {
-    setFen(chess.fen());
-    setHistory(chess.history());
+    setFen(position.fen());
+    setHistory(position.historySan());
     setSelected(null);
-  }, [chess]);
+  }, [position]);
 
   const tryMove = useCallback(
     (from: string, to: string): boolean => {
-      try {
-        const move = chess.move({ from, to, promotion: "q" });
-        setLastMove({ from: move.from, to: move.to });
-        refresh();
-        return true;
-      } catch {
-        return false;
-      }
+      const move = position.move({ from, to });
+      if (!move) return false;
+      setLastMove({ from: move.from, to: move.to });
+      refresh();
+      return true;
     },
-    [chess, refresh]
+    [position, refresh]
   );
 
   const legalTargets = useMemo(() => {
     if (!selected) return new Set<string>();
-    return new Set(chess.moves({ square: selected, verbose: true }).map((m) => m.to as string));
-  }, [chess, selected, fen]); // eslint-disable-line react-hooks/exhaustive-deps
+    return new Set(position.destsFrom(selected));
+  }, [position, selected, fen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onSquareClick = useCallback(
-    (square: Square) => {
+    (square: string) => {
       if (selected && legalTargets.has(square)) {
         tryMove(selected, square);
         return;
       }
-      const piece = chess.get(square);
-      if (piece && piece.color === chess.turn()) setSelected(square);
+      const piece = position.pieceAt(square);
+      if (piece && piece.color === position.turn) setSelected(square);
       else setSelected(null);
     },
-    [chess, selected, legalTargets, tryMove]
+    [position, selected, legalTargets, tryMove]
   );
 
   const squareStyles = useMemo(() => {
@@ -104,18 +103,18 @@ export function PlayBoard() {
   }, [lastMove, selected, legalTargets]);
 
   const newGame = useCallback(() => {
-    chess.reset();
+    position.reset();
     setLastMove(null);
     refresh();
-  }, [chess, refresh]);
+  }, [position, refresh]);
 
   const undo = useCallback(() => {
-    if (chess.undo()) {
-      const previous = chess.history({ verbose: true }).at(-1);
+    if (position.undo()) {
+      const previous = position.lastMove();
       setLastMove(previous ? { from: previous.from, to: previous.to } : null);
       refresh();
     }
-  }, [chess, refresh]);
+  }, [position, refresh]);
 
   const topLine = engine.lines[0];
   const whiteBarPct = topLine ? topLine.wpWhite : 50;

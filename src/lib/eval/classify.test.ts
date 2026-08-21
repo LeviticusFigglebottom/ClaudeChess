@@ -3,6 +3,7 @@ import { classifyMove, type ClassifyInput } from "./classify";
 
 function base(partial: Partial<ClassifyInput> = {}): ClassifyInput {
   return {
+    variant: "standard",
     wpBefore: 55,
     wpAfter: 55,
     playedUci: "g1f3",
@@ -56,6 +57,15 @@ describe("BEST", () => {
 describe("BOOK wins over everything (spec order)", () => {
   it("book position → BOOK even for the engine-best move", () => {
     expect(classifyMove(base({ isBook: true, playedUci: "e2e4", bestUci: "e2e4" }))).toBe("BOOK");
+  });
+
+  it("BOOK can never fire outside standard (addendum A1.2/A1.4)", () => {
+    expect(
+      classifyMove(base({ isBook: true, variant: "chess960", playedUci: "e2e4", bestUci: "e2e4" }))
+    ).toBe("BEST");
+    expect(
+      classifyMove(base({ isBook: true, variant: "koth", playedUci: "e2e4", bestUci: "e2e4" }))
+    ).toBe("BEST");
   });
 });
 

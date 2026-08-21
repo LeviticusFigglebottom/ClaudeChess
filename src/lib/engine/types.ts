@@ -8,9 +8,18 @@
  * never again.
  */
 
+import type { VariantId } from "@/lib/chess/variant";
+
 export interface EngineInitOpts {
   threads: number;
   hashMb: number;
+  /**
+   * Rules variant this engine instance will analyze (addendum A0.3/A1.3).
+   * chess960 turns on the engine's 960 castling/X-FEN handling. Variants
+   * vanilla Stockfish cannot evaluate are rejected at init — a meaningless
+   * eval silently corrupts every downstream trainer.
+   */
+  variant: VariantId;
 }
 
 export interface AnalyzeOpts {

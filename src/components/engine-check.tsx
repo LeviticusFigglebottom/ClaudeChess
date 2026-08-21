@@ -4,7 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { StockfishClient, detectEngineBuild, defaultThreads } from "@/lib/engine";
 import type { EngineInfo } from "@/lib/engine";
 import { normalizeInfo, winProbFromEval } from "@/lib/eval";
-import { sideToMove, START_FEN } from "@/lib/chess";
+import {
+  chess960BackRank,
+  chess960StartFen,
+  GamePosition,
+  sideToMove,
+  START_FEN,
+} from "@/lib/chess";
 
 interface CheckResult {
   id: string;
@@ -17,6 +23,8 @@ interface CheckResult {
 const LOSING_FOR_BLACK_FEN = "k7/8/8/8/8/8/8/KQ6 b - - 0 1";
 const WINNING_FOR_WHITE_FEN = "k7/8/8/8/8/8/8/KQ6 w - - 0 1";
 const DEPTH20_BUDGET_MS = 3000;
+/** Chess960 SP used for the gate-G4 checks (one of the pinned G2 set). */
+const SP_960 = 266;
 
 async function finalInfo(stream: AsyncIterable<EngineInfo>): Promise<EngineInfo | null> {
   let last: EngineInfo | null = null;
@@ -52,7 +60,7 @@ async function runChecks(): Promise<CheckResult[]> {
   const threads = defaultThreads();
   const client = new StockfishClient(build);
   try {
-    await client.init({ threads, hashMb: 64 });
+    await client.init({ threads, hashMb: 64, variant: "standard" });
     results.push({
       id: "boot",
       label: "Engine boots",
@@ -124,6 +132,62 @@ async function runChecks(): Promise<CheckResult[]> {
     });
   } finally {
     client.quit();
+  }
+
+  // --- Chess960 (Phase 0.5 gate G4): separate client with UCI_Chess960 ---
+  const client960 = new StockfishClient(detectEngineBuild());
+  try {
+    await client960.init({ threads, hashMb: 64, variant: "chess960" });
+
+    // Sane eval on a 960 start position fed as X-FEN (castling "HAha"-style).
+    const startFen = chess960StartFen(SP_960);
+    GamePosition.fromFen(startFen, "chess960"); // facade accepts it too
+    client960.setPosition(startFen);
+    const startInfo = await finalInfo(client960.analyze({ depth: 14 }));
+    if (startInfo) {
+      const whitePov = normalizeInfo(startInfo, sideToMove(startFen));
+      const sane = whitePov.mateIn === null && Math.abs(whitePov.cp ?? 9999) < 150;
+      results.push({
+        id: "960-eval",
+        label: `Chess960 SP${SP_960}: X-FEN accepted, eval sane (|cp| < 150)`,
+        pass: sane,
+        detail: `castling "${startFen.split(" ")[2]}" → White-POV ${describe(startInfo)} at depth ${startInfo.depth}`,
+      });
+    } else {
+      results.push({ id: "960-eval", label: "Chess960 eval", pass: false, detail: "no output" });
+    }
+
+    // Sign normalization on that 960 position, black queen removed, black to
+    // move: raw side-to-move score must be strongly negative, White-POV
+    // strongly positive — same invariant as the standard check.
+    const backRank = chess960BackRank(SP_960);
+    const castling = startFen.split(" ")[2] as string;
+    const losingFen = `${backRank.replace("q", "1")}/pppppppp/8/8/8/8/PPPPPPPP/${backRank.toUpperCase()} b ${castling} - 0 1`;
+    GamePosition.fromFen(losingFen, "chess960");
+    client960.setPosition(losingFen);
+    const losingInfo = await finalInfo(client960.analyze({ depth: 14 }));
+    if (losingInfo) {
+      const rawLosing = (losingInfo.mateIn ?? 0) < 0 || (losingInfo.scoreCp ?? 0) < -500;
+      const whitePov = normalizeInfo(losingInfo, sideToMove(losingFen));
+      const wpWhite = winProbFromEval(whitePov);
+      results.push({
+        id: "960-sign",
+        label: `Chess960 SP${SP_960} minus black queen: raw negative → White-POV positive`,
+        pass: rawLosing && wpWhite > 90,
+        detail: `raw ${describe(losingInfo)} → White-POV wp ${wpWhite.toFixed(1)}%`,
+      });
+    } else {
+      results.push({ id: "960-sign", label: "Chess960 sign check", pass: false, detail: "no output" });
+    }
+  } catch (error) {
+    results.push({
+      id: "960-boot",
+      label: "Chess960 engine init",
+      pass: false,
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    client960.quit();
   }
 
   return results;

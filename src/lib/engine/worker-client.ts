@@ -1,3 +1,4 @@
+import { ENGINE_SUPPORTED_VARIANTS } from "@/lib/chess/variant";
 import type {
   AnalyzeOpts,
   EngineBuild,
@@ -77,6 +78,12 @@ export class StockfishClient implements EngineClient {
 
   async init(opts: EngineInitOpts): Promise<void> {
     if (this.worker) throw new Error("engine already initialized");
+    if (!ENGINE_SUPPORTED_VARIANTS.includes(opts.variant)) {
+      throw new Error(
+        `variant "${opts.variant}" requires Fairy-Stockfish (Phase 4.5, addendum A1.3) — ` +
+          "refusing to return meaningless evals from vanilla Stockfish"
+      );
+    }
     const worker = new Worker(this.build.url);
     this.worker = worker;
 
@@ -94,6 +101,10 @@ export class StockfishClient implements EngineClient {
     this.send(`setoption name Threads value ${threads}`);
     this.send(`setoption name Hash value ${opts.hashMb}`);
     this.send(`setoption name MultiPV value ${this.lastMultipv}`);
+    if (opts.variant === "chess960") {
+      // Engine then reads X-FEN castling and speaks king-takes-rook UCI.
+      this.send("setoption name UCI_Chess960 value true");
+    }
     this.send("isready");
     await Promise.race([this.waitForLine((l) => l === "readyok"), failed]);
 
