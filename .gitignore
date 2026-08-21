@@ -6,8 +6,6 @@
 /out/
 next-env.d.ts
 
-# engine binaries — fetched by scripts/fetch-engine.mjs (postinstall)
-/public/engine/
 
 # env
 .env

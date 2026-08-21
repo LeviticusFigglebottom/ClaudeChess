@@ -9,16 +9,15 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "engine:fetch": "node scripts/fetch-engine.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "gate": "node scripts/gate-check.mjs",
-    "postinstall": "node scripts/fetch-engine.mjs"
+    "engine:refresh": "node scripts/fetch-engine.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
-    "chess.js": "^1.4.0",
+    "chessops": "^0.15.1",
     "drizzle-orm": "^0.45.2",
     "next": "^15.5.23",
     "postgres": "^3.4.9",

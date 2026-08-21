@@ -1,15 +1,17 @@
 /**
- * Fetches the Stockfish WASM builds into /public/engine (gitignored).
+ * MANUAL engine refresh tool (`npm run engine:refresh`) — NOT part of any
+ * install or build path (addendum A0.1): the binaries in /public/engine are
+ * committed to the repo, so production builds never depend on a third-party
+ * CDN. Run this only to upgrade the engine: bump VERSION, update the pinned
+ * sha256 hashes from the upstream release, run it, run the gates, commit the
+ * new binaries.
  *
  * Why not an npm dependency: the `stockfish` package tarball is ~250MB
  * because it bundles the full-net builds (113MB each). We only need the
  * lite-NNUE multithreaded build plus a single-threaded fallback (~14.5MB
- * total), so we pull exactly those files from the npm CDN and pin their
- * sha256 hashes.
- *
- * Runs on postinstall (Vercel builds included). No-ops when files already
- * exist with matching hashes. Falls back to `curl` when Node's fetch cannot
- * reach the network directly (e.g. proxied sandboxes where curl honors
+ * total), so this pulls exactly those files from the npm CDN and verifies
+ * their sha256 hashes. Falls back to `curl` when Node's fetch cannot reach
+ * the network directly (e.g. proxied sandboxes where curl honors
  * HTTPS_PROXY but undici does not).
  */
 import { createHash } from "node:crypto";
