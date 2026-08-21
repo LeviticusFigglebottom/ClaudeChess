@@ -1,0 +1,5 @@
+{
+  "bands": {
+    "600": { "pBlunder": 1.0, "temperature": 1000000 }
+  }
+}
