@@ -1,12 +1,12 @@
 # GAMBIT — working notes for agents
 
-Read `docs/SPEC.md` and `docs/ADDENDUM_A.md` before changing anything. They govern every decision; phase gates are falsifiable and must not be skipped. Current status: **Phase 0 and Phase 0.5 complete and gate-verified. Next: Phase 1 (play vs bot, now including Chess960), which ends at the bot-calibration gate — the one the spec says you will want to skip. Don't.**
+Read `docs/SPEC.md`, `docs/ADDENDUM_A.md`, and `docs/ADDENDUM_B.md` before changing anything. They govern every decision; phase gates are falsifiable and must not be skipped. Current status: **Phases 0, 0.5, and 1 built; Phase 1's bot-calibration finals run in dedicated sessions (their files: `src/lib/engine` bot policy, `bot-calibration.json`, `data/calibration/`, `scripts/arena*`, `scripts/calibrate*` — do not touch). Phase 1.5 (accounts, A2) complete and gate-verified. Next: Phase 2 (import + review).**
 
 ## Commands
 
 ```bash
 npm run dev              # dev server (localhost:3000)
-npm test                 # vitest — 145 tests incl. chessops⇄Stockfish perft cross-checks
+npm test                 # vitest — 196 tests incl. chessops⇄Stockfish perft cross-checks and PGlite account-system tests
 npm run build            # production build (lint + typecheck included)
 npm run gate             # browser gate vs http://localhost:3000 (needs `npm run start` first)
 npm run gate -- --url <url>     # gate vs a deployed preview; appends docs/gate-history.jsonl
@@ -35,6 +35,10 @@ npx tsx scripts/calibrate-fit.mts --propose|--finalize   # fit → bot-calibrati
 9. **Glicko-2 updates are batched per rating period** (12 games / 7 days), never per game (spec §7).
 10. **Rating pools never blend** (Phase 2): GAMBIT's Glicko lives on the Stockfish UCI_Elo scale (that's what the bots are calibrated against); imported chess.com and Lichess ratings are two *other* pools. Any UI showing more than one labels each with its pool — never average, compare, or convert between them.
 10. **Engine binaries are vendored** (`public/engine/`, committed). No build or install step may fetch them (A0.1). GPL notices: `NOTICE` + `/licenses` — update both when engine or rules deps change.
+11. **Account conversion links, never copies** (A2.1): the Supabase auth id IS the users.id, so anonymous→permanent must only flip flags on the same row. Any code path that creates a second user row or rewrites child FKs during conversion is a bug (pinned by `src/lib/account/account.test.ts`).
+12. **Every LLM and analysis route consumes through `src/lib/account/usage.ts`** (A2.4): `consumeUsage` before/after paid work, or `checkUsage` + the `guarded-stub` chain (401 → 403 unverified → 429 capped) for routes whose bodies haven't landed. `/api/import`, `/api/analyze`, `/api/coach`, `/api/classify-blunder` already carry the guards — Phase 2/5 replace the 501 tail, never the guards. Anonymous caps are all zero; client-side engine use is deliberately unmetered.
+13. **Account domain logic lives in `src/lib/account/*` and takes a `Db` handle** — no HTTP, no Supabase, no `next/server` imports (api.ts and guarded-stub.ts are the only route-facing adapters, and stay out of `index.ts`). This is what lets the whole account system be tested against in-process PGlite (`test-db.ts` applies the real migration chain).
+14. **Supabase env is optional**: absent → the app runs local-only (localStorage prefs/ratings, no persistence, "local mode" chip); present → anonymous session on first visit (A2.1). Nothing may hard-require an account service to play, do puzzles, or analyze locally. Server rating state is authoritative once a session exists — it runs the same `src/lib/rating/period.ts` the client runs, and client caches are overwritten by server responses.
 
 ## Layout facts
 
@@ -47,6 +51,7 @@ npx tsx scripts/calibrate-fit.mts --propose|--finalize   # fit → bot-calibrati
 - Design tokens (B2.3) live in `globals.css`. **`--flag` appears in exactly two places: flagfall and BLUNDER.** A third use is a bug, and there is a test pinning BLUNDER as its only classification. `prefers-reduced-motion` means instant state changes, not shortened animations.
 - Bot policy is `src/lib/engine/bot.ts` (pure; §6 exactly); shipping params come from `src/lib/engine/bot-calibration.json` — **uncalibrated constants do not ship** (Phase 1 gate). The calibration arena/fit pipeline is `scripts/arena.mts`, `scripts/calibration-*.sh`, `scripts/calibrate-fit.mts`; evidence JSONLs live in `data/calibration/`.
 - Bot games charge real wall time to the bot's clock; there is deliberately no 1+0 vs bots (the deep pass costs seconds) — bullet arrives with premoves in Phase 4.
+- Accounts (Phase 1.5): domain layer `src/lib/account/` (users/usage/relationships/challenges/games/export/admin), route adapters in `src/app/api/**`, session refresh in `src/middleware.ts`. `users.prefs` holds the full B2.5 object (the two named columns mirror it); `ratings.period` holds the Glicko-2 pending batch; challenge lifecycle is `challenges.status` + `acceptedByUserId`. Admin = `ADMIN_USER_IDS` env allowlist (B1.3); account purge runs via Vercel Cron (`vercel.json` → `/api/cron/purge-deleted`, `CRON_SECRET`). Blocks are real: they sever friendship, void open challenges, and `canPair` (which Phase 4 matchmaking must call) refuses the pair.
 
 ## Testing expectations
 

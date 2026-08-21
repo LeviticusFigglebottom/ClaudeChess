@@ -1,8 +1,19 @@
 # GAMBIT
 
-A chess.com-parity platform whose *actual* product is a set of trainers that don't exist anywhere else. The clone is infrastructure; the trainers are the point. Full design: [`docs/SPEC.md`](docs/SPEC.md) + [`docs/ADDENDUM_A.md`](docs/ADDENDUM_A.md).
+A chess.com-parity platform whose *actual* product is a set of trainers that don't exist anywhere else. The clone is infrastructure; the trainers are the point. Full design: [`docs/SPEC.md`](docs/SPEC.md) + [`docs/ADDENDUM_A.md`](docs/ADDENDUM_A.md) + [`docs/ADDENDUM_B.md`](docs/ADDENDUM_B.md).
 
-## Status: Phase 0.5 complete ✅ (Phase 0 ✅)
+## Status: Phase 1.5 complete ✅ (Phase 0 ✅ · 0.5 ✅ · 1 built, calibration finals in flight)
+
+| Phase 1.5 gate (accounts, A2) | Evidence |
+|---|---|
+| **Conversion preserves all history and preferences** | ✅ `src/lib/account/account.test.ts` "GATE: anonymous→permanent conversion": anon user accrues 2 games (1 rated), a rating row with pending Glicko batch, a puzzle attempt, and a full B2.5 prefs object → conversion (same auth uuid, `isAnonymous` flipped) leaves every primary key, row count, rating value, and the prefs object bit-identical — linked, never copied. One-way: a later anonymous-shaped sync cannot flip back. |
+| **Delete cascade tested** | ✅ same file, "GATE: delete cascade": a user with rows in all 13 child tables (games→plies→blunder_tags, ratings, puzzle_attempts, calibration_attempts, postmortem_responses, relationships, challenges, usage_counters, fairplay_flags, sessions) hard-deletes clean; shared `puzzles` rows and a second user's games survive; `audit_log` rows survive with `user_id` nulled. Soft delete revokes sessions; recovery works inside 30 days and refuses after; the purge cron deletes only past-window accounts. |
+| **Rate limits enforced and visible in UI** | ✅ `src/lib/account/usage.test.ts`: anonymous = zero caps on every server-metered kind (A2.1); free/plus tier caps bind exactly at the cap with nothing booked on denial; the B0.4 cost ceiling binds independently; caps sum across per-model rows; months roll over; 3-way race at cap-1 admits exactly one (advisory lock). Live now: `/api/import`, `/api/analyze`, `/api/coach`, `/api/classify-blunder` run the guard chain (401 → 403 unverified → 429 capped → 501 stub) ahead of their Phase 2/5 bodies, and `/account` renders every counter against its cap with meter bars. |
+| **Blocks actually block** | ✅ `src/lib/account/social.test.ts`: blocking severs friendship both ways, voids open challenges between the pair, refuses new challenges/requests in both directions, refuses open-link accepts, and `canPair` (the Phase 4 matchmaking guard) returns false until unblocked. |
+| **B1.3 — `users.title` grant path** | ✅ Built (kept the column): `POST /api/admin/title` behind the `ADMIN_USER_IDS` allowlist, FIDE-title enum + revoke, audit-logged, admin panel on `/account` — `account.test.ts` "B1.3". |
+| **App integrity after the auth layer** | ✅ 196/196 tests; `tsc` + eslint clean; production build clean; engine gate re-run on this build: crossOriginIsolated, MT engine, depth 20 in 1179 ms, POV + 960 checks all green; with no Supabase env every page renders, APIs answer typed 503s, and the header shows "local mode" with zero client console errors. |
+
+Phase 1.5 in one paragraph: **anonymous-first accounts** (Supabase session on first visit; play/puzzles/local analysis never gated), conversion by linking (same auth uuid — games/ratings/attempts never move), full **B2.5 preference sync** (localStorage ⇄ `users.prefs`, surviving conversion), server-side games + **Glicko-2 period state** (`ratings.period`, same `period.ts` module as the client, server wins), **friends/blocks/challenge links** (open challenges carry share tokens; accepted challenges are the Phase 4 handoff), **usage counters** with per-tier monthly caps enforced atomically and shown on `/account`, data **export** (PGN archive + analysis JSON), soft delete → 30-day recovery → cron purge, and device session management.
 
 | Phase 0.5 gate | Measured result |
 |---|---|
@@ -21,8 +32,8 @@ Phase 0 gate results (still green on the current build): `crossOriginIsolated ==
 
 ```bash
 npm install          # engine binaries are vendored in-repo — nothing fetched
-npm run dev          # http://localhost:3000
-npm test             # vitest — 92 tests incl. chessops⇄Stockfish perft cross-checks
+npm run dev          # http://localhost:3000 — no Supabase env needed: runs in local mode
+npm test             # vitest — 196 tests incl. chessops⇄Stockfish perft cross-checks + PGlite account tests
 npm run db:verify    # apply all migrations + seed to an empty in-process Postgres
 npm run gate         # headless browser gate vs a running server (build+start first)
 ```
@@ -44,6 +55,13 @@ npm run gate         # headless browser gate vs a running server (build+start fi
 3. One hand-corrected line in generated migration 0002 (drizzle-kit emits custom types as `"undefined"."citext"` in ALTER statements) — commented in place, snapshot unaffected.
 4. A3.4 "import at build time into a table": implemented as build-time compilation to a committed dataset + an idempotent seed script — Vercel builds have no database connection, and the matcher needs no table at runtime.
 
+## Accounts (Phase 1.5, addendum A2)
+
+- **Anonymous-first**: a Supabase anonymous session on first visit; play, puzzles and in-browser analysis are never gated. Import, server analysis, and LLM features require a verified account (cost + abuse control). No Supabase env → the app runs fully local (the header says so).
+- **Conversion by linking**: the auth uuid is `users.id`; converting just flips `isAnonymous` and sets the email — every game/rating/attempt row stays put. Preferences (full B2.5 object in `users.prefs`) and the localStorage rating cache sync both ways: server wins once it has state, device seeds it when it doesn't.
+- **Surface**: header account menu (create/sign in), `/account` (profile, visible usage meters vs caps, devices, export, delete/recover, admin title grants), `/friends` (requests, blocks, challenges), `/challenge/[token]` (open challenge links; accepted = the Phase 4 game-creation handoff).
+- **Env**: `ADMIN_USER_IDS` (B1.3 allowlist), `CRON_SECRET` (Vercel Cron → `/api/cron/purge-deleted` hard-deletes accounts past the 30-day window).
+
 ## Roadmap (addendum A4)
 
-Phase 1 (next): play vs Tier-A bots **including Chess960**; stops at the bot-calibration gate (±75 Elo, ≥200 games/band — the gate not to skip). Then 1.5 accounts (anonymous-first), 2 import+review (+tablebase), 2.5 analysis board, 3 puzzles/explorer, 4 multiplayer, 4.5 variants w/ Fairy-Stockfish (`FF_VARIANTS`), 5 the trainers.
+Phase 1's bot-calibration gate (±75 Elo, ≥200 games/band — the gate not to skip) closes in the dedicated calibration sessions. Then: 2 import+review (+tablebase B0.1, variant-partitioned pool B0.2), 2.5 analysis board + variation tree, 3 puzzles/explorer, 4 multiplayer (premoves A3.5, clock semantics A3.6, fair-play A2.3/B0.5), 4.5 variants w/ Fairy-Stockfish (`FF_VARIANTS`), 5 the trainers.

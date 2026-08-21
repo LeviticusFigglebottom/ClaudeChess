@@ -17,6 +17,7 @@ import {
 import { bandSearchSettings, pRandom, selectBotMove, type BotRating } from "@/lib/engine/bot";
 import { botForRating, type BotDefinition } from "@/lib/engine/bots";
 import { createEngine, defaultThreads, type EngineInfo, type StockfishClient } from "@/lib/engine";
+import type { SaveGamePayload } from "@/lib/account/games";
 import type { Prefs } from "@/lib/prefs/prefs";
 import { soundPlayer, type PlayableSound } from "@/lib/sound/player";
 import type { RatingPeriodState } from "@/lib/rating/period";
@@ -61,8 +62,12 @@ function soundForMove(move: FacadeMove, inCheckAfter: boolean): PlayableSound {
  * charged in wall time for both sides, the bot running the exact calibrated
  * shallow/deep policy through the in-browser engine, resign/draw/takeback
  * (casual only), PGN with %clk, Glicko-2 batching for rated games.
+ *
+ * `onFinished` (Phase 1.5) receives the finished game as a save payload —
+ * the auth layer persists it to /api/games when an account session exists
+ * (anonymous included) and drops it silently in local-only mode.
  */
-export function useBotGame(prefs: Prefs) {
+export function useBotGame(prefs: Prefs, onFinished?: (payload: SaveGamePayload) => void) {
   const positionRef = useRef<GamePosition | null>(null);
   const engineRef = useRef<StockfishClient | null>(null);
   const engineInitRef = useRef<Promise<void> | null>(null);
@@ -75,6 +80,8 @@ export function useBotGame(prefs: Prefs) {
   const generationRef = useRef(0);
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
+  const onFinishedRef = useRef(onFinished);
+  onFinishedRef.current = onFinished;
 
   const [status, setStatus] = useState<GameStatus>("idle");
   const [fen, setFen] = useState<string>("");
@@ -98,6 +105,52 @@ export function useBotGame(prefs: Prefs) {
     const last = position.lastMove();
     setLastMove(last ? { from: last.from, to: last.to } : null);
   }, []);
+
+  /** Movetext + headers for the game as it stands, with an explicit result. */
+  const composePgn = useCallback(
+    (
+      result: "1-0" | "0-1" | "1/2-1/2" | "*",
+      termination?: string
+    ): { text: string; eco: { eco: string; name: string } | null } => {
+      const position = positionRef.current;
+      const setup = setupRef.current;
+      const bot = botRef.current;
+      if (!position || !setup || !bot) return { text: "", eco: null };
+      const moves = position.history().map((move, index) => ({
+        san: move.san,
+        clockMsAfter:
+          setup.clock.mode === "none" ? undefined : moveClocksRef.current[index],
+      }));
+      const playerName = "You";
+      const epds: string[] = [];
+      if (setup.variant === "standard") {
+        const replay = GamePosition.fromFen(position.startFen, setup.variant);
+        for (const move of position.history()) {
+          replay.moveUci(move.uci);
+          epds.push(replay.epd());
+        }
+      }
+      const eco = setup.variant === "standard" ? openingForGame(epds) : null;
+      const text = writePgn(
+        {
+          white: setup.playerColor === "w" ? playerName : bot.name,
+          black: setup.playerColor === "b" ? playerName : bot.name,
+          result,
+          variant: setup.variant,
+          startFen: setup.variant === "chess960" ? position.startFen : undefined,
+          startPositionId: setup.variant === "chess960" ? setup.startPositionId : undefined,
+          clock: setup.clock,
+          rated: setup.rated,
+          playedAt: new Date(),
+          termination,
+          eco,
+        },
+        moves
+      );
+      return { text, eco };
+    },
+    []
+  );
 
   const endGame = useCallback(
     (playerScore: 0 | 0.5 | 1, reason: string) => {
@@ -125,8 +178,44 @@ export function useBotGame(prefs: Prefs) {
       setGameOver(info);
       setStatus("over");
       play(playerScore === 1 ? "game-end-win" : playerScore === 0.5 ? "game-end-draw" : "game-end-loss");
+
+      // Phase 1.5: hand the finished game to the persistence layer. The
+      // server's rated-state response overwrites the local cache written
+      // above (same module, same inputs — it only differs across devices).
+      const { text, eco } = composePgn(result, reason);
+      if (text) {
+        onFinishedRef.current?.({
+          variant: setup.variant,
+          startFen:
+            setup.variant === "chess960" ? (positionRef.current?.startFen ?? null) : null,
+          startPositionId:
+            setup.variant === "chess960" ? (setup.startPositionId ?? null) : null,
+          pgn: text,
+          whiteName: setup.playerColor === "w" ? "You" : bot.name,
+          blackName: setup.playerColor === "b" ? "You" : bot.name,
+          userColor: setup.playerColor === "w" ? "white" : "black",
+          result,
+          termination: reason,
+          timeControl:
+            setup.clock.mode === "none"
+              ? null
+              : `${Math.round(setup.clock.initialMs / 1000)}+${Math.round(setup.clock.incrementMs / 1000)}`,
+          eco: eco?.eco ?? null,
+          opening: eco?.name ?? null,
+          playedAt: new Date().toISOString(),
+          rated:
+            setup.rated && setup.clock.mode !== "none"
+              ? {
+                  bucket: timeControlBucket(setup.clock),
+                  opponentRating: bot.rating,
+                  opponentRd: bot.rd,
+                  score: playerScore,
+                }
+              : null,
+        });
+      }
     },
-    [play]
+    [composePgn, play]
   );
 
   /** Natural (rules-based) game end; returns true when the game ended. */
@@ -368,42 +457,10 @@ export function useBotGame(prefs: Prefs) {
     refresh();
   }, [botThinking, refresh, status]);
 
-  const pgn = useCallback((): string => {
-    const position = positionRef.current;
-    const setup = setupRef.current;
-    const bot = botRef.current;
-    if (!position || !setup || !bot) return "";
-    const moves = position.history().map((move, index) => ({
-      san: move.san,
-      clockMsAfter:
-        setup.clock.mode === "none" ? undefined : moveClocksRef.current[index],
-    }));
-    const playerName = "You";
-    const epds: string[] = [];
-    if (setup.variant === "standard") {
-      const replay = GamePosition.fromFen(position.startFen, setup.variant);
-      for (const move of position.history()) {
-        replay.moveUci(move.uci);
-        epds.push(replay.epd());
-      }
-    }
-    return writePgn(
-      {
-        white: setup.playerColor === "w" ? playerName : bot.name,
-        black: setup.playerColor === "b" ? playerName : bot.name,
-        result: gameOver?.result ?? "*",
-        variant: setup.variant,
-        startFen: setup.variant === "chess960" ? position.startFen : undefined,
-        startPositionId: setup.variant === "chess960" ? setup.startPositionId : undefined,
-        clock: setup.clock,
-        rated: setup.rated,
-        playedAt: new Date(),
-        termination: gameOver?.reason,
-        eco: setup.variant === "standard" ? openingForGame(epds) : null,
-      },
-      moves
-    );
-  }, [gameOver]);
+  const pgn = useCallback(
+    (): string => composePgn(gameOver?.result ?? "*", gameOver?.reason).text,
+    [composePgn, gameOver]
+  );
 
   // Clock ticker: display updates, flag detection, low-time ticks.
   useEffect(() => {

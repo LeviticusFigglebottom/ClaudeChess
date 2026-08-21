@@ -3,7 +3,11 @@
 import { BOARD_THEMES, type BoardThemeId, type PieceSetId } from "@/lib/prefs/prefs";
 import { usePrefs } from "./prefs-context";
 
-/** B2.5 customization surface. Stored per-device until accounts (Phase 1.5). */
+/**
+ * B2.5 customization surface. localStorage is the always-there cache; when a
+ * session exists (anonymous included) the auth provider mirrors changes to
+ * the DB so preferences follow the account and survive conversion.
+ */
 export function SettingsPanel() {
   const { prefs, update } = usePrefs();
 

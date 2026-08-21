@@ -64,6 +64,18 @@ export const relationshipStatusEnum = pgEnum("relationship_status", ["pending", 
 
 export const challengeColorEnum = pgEnum("challenge_color", ["white", "black", "random"]);
 
+/**
+ * Challenge lifecycle (Phase 1.5). 'open' until someone acts; expiry is a
+ * property of expiresAt, not a stored status. An accepted challenge is the
+ * Phase 4 handoff point where the multiplayer game row gets created.
+ */
+export const challengeStatusEnum = pgEnum("challenge_status", [
+  "open",
+  "accepted",
+  "declined",
+  "canceled",
+]);
+
 export const timeControlBucketEnum = pgEnum("time_control_bucket", [
   "bullet",
   "blitz",
@@ -144,6 +156,13 @@ export const users = pgTable(
     tier: tierEnum("tier").notNull().default("free"),
     prefersBoardTheme: text("prefers_board_theme"),
     prefersPieceSet: text("prefers_piece_set"),
+    /**
+     * Full B2.5 preference object (board, pieces, sound, animation, move list,
+     * eval bar, accessibility) — the DB side of the localStorage↔DB sync that
+     * must survive the anonymous→permanent conversion. The two named columns
+     * above stay denormalized mirrors of prefs.boardTheme / prefs.pieceSet.
+     */
+    prefs: jsonb("prefs").$type<Record<string, unknown>>(),
     /** Soft delete with a 30-day recovery window, then hard cascade (A2.4). */
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -166,6 +185,13 @@ export const ratings = pgTable(
     rating: doublePrecision("rating").notNull(),
     rd: doublePrecision("rd").notNull(),
     volatility: doublePrecision("volatility").notNull(),
+    /**
+     * Glicko-2 rating-period batch state (spec §7 — updates close per period,
+     * never per game): the pending results since the last close, as
+     * RatingPeriodState.pending. rating/rd/volatility above are the SETTLED
+     * values from the last period close.
+     */
+    period: jsonb("period").$type<{ pending: unknown[] }>(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -447,6 +473,12 @@ export const challenges = pgTable(
     rated: boolean("rated").notNull().default(false),
     color: challengeColorEnum("color").notNull().default("random"),
     token: text("token").unique(),
+    status: challengeStatusEnum("status").notNull().default("open"),
+    /** Who accepted an open (token) challenge — for direct challenges, equals toUserId. */
+    acceptedByUserId: uuid("accepted_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },

@@ -5,6 +5,7 @@ import { AnalysisBoard } from "@/components/analysis-board";
 import { BotGameView } from "@/components/bot-game";
 import { GameSetupCard } from "@/components/game-setup";
 import { SettingsPanel } from "@/components/settings-panel";
+import { useAuth } from "@/components/auth-context";
 import { usePrefs } from "@/components/prefs-context";
 import { useBotGame, type GameSetup } from "@/components/use-bot-game";
 
@@ -12,7 +13,8 @@ type Mode = "setup" | "game" | "analysis";
 
 export function PlayClient() {
   const { prefs } = usePrefs();
-  const game = useBotGame(prefs);
+  const { saveFinishedGame } = useAuth();
+  const game = useBotGame(prefs, saveFinishedGame);
   const [mode, setMode] = useState<Mode>("setup");
 
   const startGame = (setup: GameSetup) => {

@@ -70,20 +70,35 @@ export const BOARD_THEMES: Record<BoardThemeId, { name: string; light: string; d
 
 const STORAGE_KEY = "gambit.prefs.v1";
 
+/** Deep-merges a possibly partial/stale prefs object over the defaults. */
+export function normalizePrefs(raw: unknown): Prefs {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return DEFAULT_PREFS;
+  const parsed = raw as Partial<Prefs>;
+  return {
+    ...DEFAULT_PREFS,
+    ...parsed,
+    sound: { ...DEFAULT_PREFS.sound, ...parsed.sound },
+    evalBar: { ...DEFAULT_PREFS.evalBar, ...parsed.evalBar },
+    accessibility: { ...DEFAULT_PREFS.accessibility, ...parsed.accessibility },
+  };
+}
+
 export function loadPrefs(): Prefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_PREFS;
-    const parsed = JSON.parse(raw) as Partial<Prefs>;
-    return {
-      ...DEFAULT_PREFS,
-      ...parsed,
-      sound: { ...DEFAULT_PREFS.sound, ...parsed.sound },
-      evalBar: { ...DEFAULT_PREFS.evalBar, ...parsed.evalBar },
-      accessibility: { ...DEFAULT_PREFS.accessibility, ...parsed.accessibility },
-    };
+    return normalizePrefs(JSON.parse(raw));
   } catch {
     return DEFAULT_PREFS;
+  }
+}
+
+/** True when the user has an explicitly stored preference object. */
+export function hasStoredPrefs(): boolean {
+  try {
+    return localStorage.getItem(STORAGE_KEY) !== null;
+  } catch {
+    return false;
   }
 }
 

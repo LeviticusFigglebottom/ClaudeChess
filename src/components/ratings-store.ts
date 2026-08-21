@@ -62,3 +62,29 @@ export function recordRatedGame(
   save(file);
   return next;
 }
+
+/** Every locally cached rating state — the bootstrap seed payload (Phase 1.5). */
+export function getAllRatingStates(): { variant: string; bucket: string; state: RatingPeriodState }[] {
+  const file = load();
+  return Object.entries(file.entries).flatMap(([key, state]) => {
+    if (!state) return [];
+    const [variant, bucket] = key.split(":");
+    if (!variant || !bucket) return [];
+    return [{ variant, bucket, state }];
+  });
+}
+
+/**
+ * Overwrites the local cache with a server-authoritative state (Phase 1.5:
+ * once signed in — anonymous included — the server's Glicko-2 state wins;
+ * localStorage is the offline cache).
+ */
+export function applyServerRatingState(
+  variant: string,
+  bucket: string,
+  state: RatingPeriodState
+): void {
+  const file = load();
+  file.entries[`${variant}:${bucket}` as RatingKey] = state;
+  save(file);
+}
