@@ -34,7 +34,7 @@ node scripts/perft960-report.mjs  # G2 evidence table (chessops vs Stockfish per
 ## Layout facts
 
 - Rules: `chessops` (GPL-3.0-or-later). chess.js is gone — do not reintroduce it. Chess960 generation is `src/lib/chess/chess960.ts` (Scharnagl 0–959, SP518 = standard).
-- There is no `src/workers/stockfish.worker.ts`: the engine script itself is the worker. `src/workers/analysis.worker.ts` + the engine pool (spec §3.3) land with Phase 2.
+- There is no `src/workers/stockfish.worker.ts`: the engine script itself is the worker. `src/workers/analysis.worker.ts` + the engine pool (spec §3.3) land with Phase 2. **The pool must partition workers by variant** (B0.2): `UCI_Chess960` is a per-instance option, so a mixed standard+960 import batch on one pool would thrash re-initializing — partition the job queue by variant, one sub-pool per active variant, capped in total.
 - `react-chessboard` is pinned to v4 (spec §1). v5 is a breaking rewrite — don't bump casually.
 - Migrations in `src/db/migrations` are generated — edit `src/db/schema.ts`, run `npm run db:generate`, then `npm run db:verify`. Exception on record: one hand-corrected line in 0002 (drizzle-kit emits custom types as `"undefined"."citext"` in ALTER statements); if that recurs on future citext ALTERs, correct it the same way with a comment. Schema enums are literal (drizzle-kit runs schema.ts standalone) and pinned to their domain constants by `src/db/schema.test.ts`.
 - `src/db/seed/openings.json` is generated-but-committed (hermetic builds); regenerate via `openings:build` when `data/chess-openings/*.tsv` change — the script hard-fails if any PGN stops replaying.
