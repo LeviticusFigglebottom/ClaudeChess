@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:generate": "drizzle-kit generate",
+    "db:generate": "drizzle-kit generate && node scripts/fix-generated-migrations.mjs",
     "db:migrate": "drizzle-kit migrate",
     "gate": "node scripts/gate-check.mjs",
     "engine:refresh": "node scripts/fetch-engine.mjs",

@@ -9,8 +9,7 @@ CREATE TABLE "audit_log" (
 	"action" text NOT NULL,
 	"meta" jsonb,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "challenges" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"from_user_id" uuid NOT NULL,
@@ -23,8 +22,7 @@ CREATE TABLE "challenges" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "challenges_token_unique" UNIQUE("token")
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "fairplay_flags" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
@@ -34,16 +32,14 @@ CREATE TABLE "fairplay_flags" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"reviewed_at" timestamp with time zone,
 	"outcome" text
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "openings" (
 	"fen_key" text PRIMARY KEY NOT NULL,
 	"eco" text NOT NULL,
 	"name" text NOT NULL,
 	"pgn" text NOT NULL,
 	"ply" integer NOT NULL
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "relationships" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
@@ -52,8 +48,7 @@ CREATE TABLE "relationships" (
 	"status" "relationship_status" DEFAULT 'accepted' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "relationships_no_self" CHECK ("relationships"."user_id" <> "relationships"."target_user_id")
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "sessions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
@@ -62,8 +57,7 @@ CREATE TABLE "sessions" (
 	"user_agent" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"revoked_at" timestamp with time zone
-);
---> statement-breakpoint
+);--> statement-breakpoint
 CREATE TABLE "usage_counters" (
 	"user_id" uuid NOT NULL,
 	"month" date NOT NULL,
@@ -72,14 +66,12 @@ CREATE TABLE "usage_counters" (
 	"imports_run" integer DEFAULT 0 NOT NULL,
 	"analysis_plies_deep" integer DEFAULT 0 NOT NULL,
 	CONSTRAINT "usage_counters_user_id_month_pk" PRIMARY KEY("user_id","month")
-);
---> statement-breakpoint
+);--> statement-breakpoint
 DROP INDEX "ratings_user_tc_idx";--> statement-breakpoint
--- Hand-corrected: drizzle-kit emits the custom type as "undefined"."citext"
--- in ALTER statements (customType codegen gap). citext lives in the public
--- schema (extension enabled in 0001). This is the only edited line in any
--- generated migration; the snapshot already records the type as citext, so
--- future diffs are unaffected.
+-- Repaired by scripts/fix-generated-migrations.mjs (B0.8): drizzle-kit emits
+-- custom types in ALTER statements qualified with a literal undefined schema.
+-- citext lives in the public schema (extension enabled in 0001); the snapshot
+-- already records the type correctly, so future diffs are unaffected.
 ALTER TABLE "users" ALTER COLUMN "handle" SET DATA TYPE citext;--> statement-breakpoint
 ALTER TABLE "users" ALTER COLUMN "email" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "games" ADD COLUMN "variant" "variant" DEFAULT 'standard' NOT NULL;--> statement-breakpoint
