@@ -22,7 +22,14 @@ interface CheckResult {
 /** Black to move, down a full queen: the canonical sign-normalization probe. */
 const LOSING_FOR_BLACK_FEN = "k7/8/8/8/8/8/8/KQ6 b - - 0 1";
 const WINNING_FOR_WHITE_FEN = "k7/8/8/8/8/8/8/KQ6 w - - 0 1";
-const DEPTH20_BUDGET_MS = 3000;
+/**
+ * B0.10: was 3000. Depth-20 startpos moved 1062ms → 1636ms between Phase 0
+ * and Phase 0.5 with no engine-path change (likely container load); the
+ * tightened budget turns silent drift into a gate failure before it costs an
+ * 80-ply batch job at Phase 2 scale. Every gate run appends the measured ms
+ * to docs/gate-history.jsonl.
+ */
+const DEPTH20_BUDGET_MS = 2500;
 /** Chess960 SP used for the gate-G4 checks (one of the pinned G2 set). */
 const SP_960 = 266;
 

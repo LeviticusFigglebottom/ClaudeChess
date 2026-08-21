@@ -10,6 +10,7 @@
  * Exits 0 only when every check passes. Set CHROMIUM_PATH to point at a
  * specific Chromium binary if Playwright's own resolution fails.
  */
+import { appendFileSync } from "node:fs";
 import { chromium } from "playwright";
 
 const urlFlagIndex = process.argv.indexOf("--url");
@@ -43,5 +44,23 @@ for (const result of results) {
 }
 
 const allPass = results.every((result) => result.pass);
-console.log(`\nPhase 0 gate: ${allPass ? "PASS" : "FAIL"}`);
+
+// B0.10: record depth-20 timing on every run so performance drift is a
+// visible series, not an anecdote. The in-page check fails above 2500ms.
+const depth20 = results.find((result) => result.id === "depth20");
+const depth20Ms = Number(depth20?.detail.match(/in (\d+)ms/)?.[1] ?? NaN);
+appendFileSync(
+  new URL("../docs/gate-history.jsonl", import.meta.url),
+  JSON.stringify({
+    at: new Date().toISOString(),
+    url: target,
+    isolated,
+    depth20Ms,
+    detail: depth20?.detail ?? null,
+    pass: allPass,
+  }) + "\n"
+);
+console.log(`\ndepth-20 recorded: ${depth20Ms}ms → docs/gate-history.jsonl`);
+
+console.log(`Phase 0 gate: ${allPass ? "PASS" : "FAIL"}`);
 process.exit(allPass ? 0 : 1);
