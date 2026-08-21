@@ -20,6 +20,7 @@
  * 140-ply cap adjudicates by last deep eval (|cp|>=300 wins, else draw).
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { freemem } from "node:os";
 import path from "node:path";
 import { GamePosition, START_FEN } from "../src/lib/chess";
 import {
@@ -295,8 +296,9 @@ async function worker(): Promise<void> {
     points += record.score;
     const elapsedMin = (performance.now() - startedAt) / 60000;
     const rate = (completed - existing) / elapsedMin;
+    const freeGb = (freemem() / 1024 ** 3).toFixed(1);
     console.log(
-      `[${completed}/${args.games}] g${gameIndex} ${record.score === 1 ? "W" : record.score === 0 ? "L" : "D"} ${record.plies}p ${record.endReason} ${(record.ms / 1000).toFixed(0)}s | run score ${points}/${completed - existing} | ${rate.toFixed(2)} games/min`
+      `[${completed}/${args.games}] g${gameIndex} ${record.score === 1 ? "W" : record.score === 0 ? "L" : "D"} ${record.plies}p ${record.endReason} ${(record.ms / 1000).toFixed(0)}s | run score ${points}/${completed - existing} | ${rate.toFixed(2)} games/min | free ${freeGb}G`
     );
   }
 }

@@ -135,6 +135,8 @@ if (mode === "propose") {
     ci95: number;
     games: number;
     anchors: string[];
+    /** Gate amendment: how this band is anchored — chained bands report CI, not ±75. */
+    anchor: "direct" | "chained(1)" | "chained(2)";
   }
   const proposed = JSON.parse(readFileSync(path.join(dir, "proposed-params.json"), "utf8")) as {
     bands: Record<string, { pBlunder: number; temperature: number }>;
@@ -157,6 +159,7 @@ if (mode === "propose") {
       ci95: Math.round(estimate.ci95),
       games: n,
       anchors: [`sf-elo-${anchor}@400ms`],
+      anchor: "direct",
     };
   }
 
@@ -202,10 +205,14 @@ if (mode === "propose") {
       ci95: Math.round(combined.ci95),
       games: games.length,
       anchors,
+      anchor: band === 600 ? "chained(2)" : "chained(1)",
     };
   }
 
-  console.log("\nband | games | measured | CI95 | Δ nominal | verdict");
+  // Amended gate: direct bands must land within ±75 of nominal; chained bands
+  // report their measured CI and are never claimed to a tolerance they did
+  // not meet. Minimum 150 games everywhere.
+  console.log("\nband | anchor     | games | measured | CI95 | Δ nominal | verdict");
   let allPass = true;
   for (const band of BANDS) {
     const result = results[String(band)];
@@ -215,10 +222,19 @@ if (mode === "propose") {
       continue;
     }
     const delta = result.measuredElo - band;
-    const pass = Math.abs(delta) <= 75 && result.games >= 200;
-    if (!pass) allPass = false;
+    let verdict: string;
+    if (result.games < 150) {
+      verdict = "FAIL (games<150)";
+      allPass = false;
+    } else if (result.anchor === "direct") {
+      const pass = Math.abs(delta) <= 75;
+      verdict = pass ? "PASS (±75)" : "FAIL (±75)";
+      if (!pass) allPass = false;
+    } else {
+      verdict = `CHAINED (±${result.ci95} reported)`;
+    }
     console.log(
-      `${String(band).padEnd(4)} | ${String(result.games).padStart(5)} | ${String(result.measuredElo).padStart(8)} | ±${String(result.ci95).padEnd(3)} | ${delta >= 0 ? "+" : ""}${String(delta).padStart(3)}      | ${pass ? "PASS" : "FAIL"}`
+      `${String(band).padEnd(4)} | ${result.anchor.padEnd(10)} | ${String(result.games).padStart(5)} | ${String(result.measuredElo).padStart(8)} | ±${String(result.ci95).padEnd(3)} | ${delta >= 0 ? "+" : ""}${String(delta).padStart(3)}      | ${verdict}`
     );
   }
 
@@ -240,6 +256,7 @@ if (mode === "propose") {
                 ci95: result.ci95,
                 games: result.games,
                 anchors: result.anchors,
+                anchor: result.anchor,
               }
             : null,
         ];

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { chess960BackRank } from "@/lib/chess";
 import type { ClockConfig } from "@/lib/clock/clock";
 import { BOT_RATINGS, type BotRating } from "@/lib/engine/bot";
-import { botForRating } from "@/lib/engine/bots";
+import { anchorTag, botForRating } from "@/lib/engine/bots";
 import { timeControlBucket } from "@/lib/clock/clock";
 import { getRatingState, type RatingKey } from "./ratings-store";
 import type { GameSetup } from "./use-bot-game";
@@ -113,12 +113,15 @@ export function GameSetupCard({
               key={rating}
               className={`${chip(botRating === rating)} notation`}
               onClick={() => setBotRating(rating)}
-              title={botForRating(rating).calibrated ? "calibrated" : "uncalibrated"}
+              title={`calibration: ${anchorTag(botForRating(rating))}`}
             >
               {rating}
             </button>
           ))}
         </div>
+        <p className="notation mt-1.5 text-xs text-text-faint">
+          {botForRating(botRating).name} · calibration: {anchorTag(botForRating(botRating))}
+        </p>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-6">

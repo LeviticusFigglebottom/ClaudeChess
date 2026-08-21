@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { anchorTag } from "@/lib/engine/bots";
 import { FigurineSan } from "./pieces";
 import { GameBoard } from "./game-board";
 import { GameClock } from "./game-clock";
@@ -72,7 +73,7 @@ export function BotGameView({ game, onExit }: { game: BotGameApi; onExit(): void
             ms={game.clockFor(botColor)}
             active={game.status === "playing" && game.position?.turn === botColor}
             flagged={flaggedSide === botColor}
-            label={`${bot?.name ?? "Bot"}${game.botThinking ? " · thinking…" : ""}`}
+            label={`${bot?.name ?? "Bot"}${bot ? ` (${anchorTag(bot)})` : ""}${game.botThinking ? " · thinking…" : ""}`}
           />
         </div>
         <GameBoard
