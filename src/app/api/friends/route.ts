@@ -9,12 +9,30 @@ import {
   unblockUser,
 } from "@/lib/account/relationships";
 import { AccountError } from "@/lib/account/types";
+import { lichessFriendMatches } from "@/lib/import/importer";
 
-/** GET /api/friends — friends, pending requests both ways, block list. */
+/**
+ * GET /api/friends — friends, pending requests both ways, block list, plus
+ * `lichessMatches`: GAMBIT users I follow on Lichess (verified↔verified
+ * handle intersection — see lichessFriendMatches) I'm not already friends
+ * with, surfaced as one-click friend-request suggestions.
+ */
 export async function GET() {
   return handleApi(async () => {
     const { db, user } = await requireUser();
-    return NextResponse.json(await listRelationships(db, user.id));
+    const [relationships, matches] = await Promise.all([
+      listRelationships(db, user.id),
+      lichessFriendMatches(db, user.id),
+    ]);
+    const already = new Set([
+      ...relationships.friends.map((friend) => friend.id),
+      ...relationships.incoming.map((row) => row.from.id),
+      ...relationships.outgoing.map((row) => row.to.id),
+    ]);
+    return NextResponse.json({
+      ...relationships,
+      lichessMatches: matches.filter((match) => !already.has(match.userId)),
+    });
   });
 }
 

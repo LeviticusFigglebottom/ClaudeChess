@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lte, or, sql, gte } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte, or, sql, gte } from "drizzle-orm";
 import { ANALYSIS_SETTINGS } from "@/lib/eval";
 import { games, plies, repertoireNodes } from "@/db/schema";
 import type { Db } from "@/lib/account/types";

@@ -176,6 +176,15 @@ export function PuzzlesClient() {
     }
   }, [announce, play]);
 
+  // ?mode=own deep link (dashboard "drill of the day") — applied before the
+  // first load; an effect (post-hydration) so SSR markup stays mode-agnostic.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("mode") === "own") {
+      modeRef.current = "own";
+      setMode("own");
+    }
+  }, []);
+
   useEffect(() => {
     if (auth.status === "ready") void loadNext();
   }, [auth.status, loadNext]);

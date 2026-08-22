@@ -69,6 +69,7 @@ export function LiveClient({ gameId }: { gameId: string }) {
   const [tick, setTick] = useState(0);
   const [premove, setPremove] = useState<{ from: string; to: string } | null>(null);
   const [sanInput, setSanInput] = useState("");
+  const [shared, setShared] = useState(false);
   const receivedAtRef = useRef(0);
   const seqRef = useRef(0);
   const flagClaimedRef = useRef(false);
@@ -383,17 +384,33 @@ export function LiveClient({ gameId }: { gameId: string }) {
               {state.variant === "chess960" && " · Chess960"}
               {state.variant === "threecheck" && " · Three-check"}
               {state.variant === "koth" && " · King of the Hill"}
-              {state.rated && (
+              {state.rated && yourColor !== null && (
                 <span className="mt-0.5 block text-xs text-text-faint">
                   Fair-play signals are recorded on rated games and visible to you on
                   your account page.
                 </span>
               )}
+              <button
+                onClick={() => {
+                  void navigator.clipboard.writeText(window.location.href);
+                  setShared(true);
+                  setTimeout(() => setShared(false), 2000);
+                }}
+                className="mt-1.5 block text-xs text-text-faint underline-offset-2 hover:text-text-dim hover:underline"
+              >
+                {shared ? "link copied — anyone can watch live" : "share this game (spectate link)"}
+              </button>
               {state.variant === "threecheck" && (
                 <ChecksRemaining fen={state.fen} />
               )}
             </p>
-            {state.status === "active" ? (
+            {state.status === "active" && yourColor === null && (
+              <p className="mt-3 flex items-center gap-2 text-xs text-text-dim">
+                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-brilliant" />
+                LIVE — you are spectating
+              </p>
+            )}
+            {state.status === "active" && yourColor !== null && (
               <div className="mt-3 flex flex-wrap gap-2">
                 <ActionButton onClick={() => void post({ action: "resign" })}>Resign</ActionButton>
                 {state.drawOfferBy && state.drawOfferBy !== yourColor ? (
@@ -414,7 +431,8 @@ export function LiveClient({ gameId }: { gameId: string }) {
                   <ActionButton onClick={() => void post({ action: "abort" })}>Abort</ActionButton>
                 )}
               </div>
-            ) : (
+            )}
+            {state.status !== "active" && (
               <div className="mt-3" data-testid="game-result">
                 <p className="notation text-lg text-paper">{state.result ?? "aborted"}</p>
                 <p className="text-sm text-text-dim">{state.termination}</p>
@@ -426,7 +444,7 @@ export function LiveClient({ gameId }: { gameId: string }) {
                 </Link>
               </div>
             )}
-            {state.drawOfferBy === yourColor && state.status === "active" && (
+            {yourColor !== null && state.drawOfferBy === yourColor && state.status === "active" && (
               <p className="mt-2 text-xs text-text-faint">draw offered…</p>
             )}
           </div>

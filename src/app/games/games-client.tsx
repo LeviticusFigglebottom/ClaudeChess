@@ -13,8 +13,8 @@ import {
 /**
  * Games list + the import surface (Phase 2, C1): connect your own chess.com /
  * Lichess handle, import incrementally with live progress, optional weekly
- * auto-import. Imported games are labeled by source; handles are unverified
- * (no platform offers an ownership check) and say so.
+ * auto-import. Lichess handles verify via OAuth (/api/oauth/lichess/start);
+ * chess.com offers no OAuth, so those stay labeled unverified.
  */
 
 interface GameRowPayload {
@@ -278,6 +278,28 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
     if (auth.status === "ready") reload();
   }, [auth.status, reload]);
 
+  // Landing back from the Lichess OAuth flow: surface the outcome once,
+  // then strip the marker from the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("verified");
+    if (!outcome) return;
+    if (outcome === "lichess") {
+      setNotice("Lichess account verified — your handle now carries a ✓.");
+    } else {
+      const reason = params.get("reason");
+      setNotice(
+        reason === "denied"
+          ? "Lichess verification cancelled."
+          : "Lichess verification failed — please try again."
+      );
+    }
+    params.delete("verified");
+    params.delete("reason");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, []);
+
   const verified = auth.profile && !auth.profile.isAnonymous && auth.profile.emailVerifiedAt;
 
   const runImport = async (source: "chesscom" | "lichess") => {
@@ -325,9 +347,10 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
       ) : (
         <>
           <p className="mb-3 text-xs text-text-faint">
-            Connect your own handle — every account imports its own games. Handles are
-            unverified (neither platform offers an ownership check without OAuth), so
-            imported games are labeled with the source handle.
+            Connect your own handle — every account imports its own games. Lichess
+            handles can be verified with a one-click Lichess sign-in; chess.com offers
+            no OAuth, so chess.com handles stay unverified and imported games are
+            labeled with the source handle.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             {(["chesscom", "lichess"] as const).map((source) => (
@@ -400,7 +423,7 @@ function SourceCard({
       <p className="mb-2 text-sm font-medium text-text">{label}</p>
       {!linked ? (
         <form
-          className="flex gap-2"
+          className="flex flex-wrap gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (username.trim()) onLink(username.trim());
@@ -416,15 +439,47 @@ function SourceCard({
           <button className="btn-primary px-3 py-1 text-sm">
             Connect
           </button>
+          {source === "lichess" && (
+            <a
+              href="/api/oauth/lichess/start"
+              className="mt-1 basis-full text-xs text-brilliant hover:underline"
+            >
+              or sign in with Lichess to connect &amp; verify →
+            </a>
+          )}
         </form>
       ) : (
         <div>
           <p className="notation text-sm text-text">
             @{linked.externalUsername}
-            <span className="ml-2 text-xs text-text-faint">
-              {linked.verified ? "verified" : "unverified"}
-            </span>
+            {linked.verified ? (
+              <span
+                className="ml-2 text-xs text-accent"
+                title="Ownership proven via Lichess sign-in"
+              >
+                ✓ verified
+              </span>
+            ) : (
+              <span
+                className="ml-2 text-xs text-text-faint"
+                title={
+                  source === "chesscom"
+                    ? "chess.com offers no OAuth — ownership cannot be verified"
+                    : "Handle is self-reported until verified"
+                }
+              >
+                unverified
+              </span>
+            )}
           </p>
+          {!linked.verified && source === "lichess" && (
+            <a
+              href="/api/oauth/lichess/start"
+              className="mt-1 inline-block text-xs text-brilliant hover:underline"
+            >
+              Verify via Lichess sign-in →
+            </a>
+          )}
           <p className="mt-1 text-xs text-text-faint">
             {linked.lastImportedAt
               ? `last import ${new Date(linked.lastImportedAt).toLocaleString()}`

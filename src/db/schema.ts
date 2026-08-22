@@ -317,6 +317,14 @@ export const linkedAccounts = pgTable(
     source: gameSourceEnum("source").notNull(),
     externalUsername: text("external_username").notNull(),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    /**
+     * Lichess OAuth only (chess.com has no OAuth — its links stay
+     * unverifiable): the usernames this account follows, captured at
+     * verification time with the follow:read scope. Matched against OTHER
+     * users' VERIFIED lichess handles to suggest friendships — unverified
+     * handles never match (impersonation guard).
+     */
+    lichessFollowing: jsonb("lichess_following").$type<string[]>(),
     /** playedAt upper bound of already-imported games — the incremental cursor. */
     lastImportedAt: timestamp("last_imported_at", { withTimezone: true }),
     /** Weekly auto-import via cron (C1: polling only; hourly would be abusive). */

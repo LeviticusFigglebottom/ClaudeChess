@@ -270,6 +270,26 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   const current = cursor > 0 ? data?.plies[cursor - 1] : null;
   const fen = current?.fenAfter ?? data?.game.startFen ?? START_FEN;
 
+  // On error plies, annotate the board chess.com-style: the played move in
+  // the mistake tone, the engine's line in the confident accent. Arrows are
+  // drawn on the post-move board, so the best-move arrow starts from where
+  // the piece STOOD — the standard review convention.
+  const reviewArrows = useMemo(() => {
+    if (!current?.classification || !ERROR_CLASSES.includes(current.classification)) {
+      return undefined;
+    }
+    const best = current.pv1?.[0];
+    if (!best || best === current.uci) return undefined;
+    return [
+      {
+        from: current.uci.slice(0, 2),
+        to: current.uci.slice(2, 4),
+        color: "var(--warn-2)",
+      },
+      { from: best.slice(0, 2), to: best.slice(2, 4), color: "var(--accent)" },
+    ];
+  }, [current]);
+
   const whiteWp = useMemo(() => {
     if (!data) return 50;
     if (!current) {
@@ -458,6 +478,7 @@ export function ReviewClient({ gameId }: { gameId: string }) {
               onMove={() => false}
               destsFrom={() => []}
               canSelect={() => false}
+              arrows={reviewArrows}
             />
             <div className="mt-2 flex items-center justify-between">
               <div className="flex gap-1">

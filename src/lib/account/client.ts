@@ -60,7 +60,7 @@ export class ApiError extends Error {
   }
 }
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
@@ -186,11 +186,20 @@ export interface PublicUserPayload {
   title: string | null;
 }
 
+export interface LichessMatchPayload {
+  userId: string;
+  handle: string;
+  displayName: string | null;
+  lichessUsername: string;
+}
+
 export interface FriendsResponse {
   friends: PublicUserPayload[];
   incoming: { requestId: string; from: PublicUserPayload }[];
   outgoing: { requestId: string; to: PublicUserPayload }[];
   blocked: PublicUserPayload[];
+  /** GAMBIT users I follow on Lichess (verified↔verified handle matches). */
+  lichessMatches: LichessMatchPayload[];
 }
 
 export const friendsApi = {

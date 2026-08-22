@@ -22,7 +22,7 @@ import { ingestPositionEvals, precacheFromEvalCache, type IngestPosition } from 
 let t: TestDb;
 let gameId: string;
 let userId: string;
-let thirdGamePlies: (typeof plies.$inferInsert)[] = [];
+let thirdGamePlies: Omit<typeof plies.$inferInsert, "gameId">[] = [];
 
 // 1.a3 a6 2.h3 h6 — no tactics, evals fully controlled by the test.
 const MOVES = ["a2a3", "a7a6", "h2h3", "h7h6"];
