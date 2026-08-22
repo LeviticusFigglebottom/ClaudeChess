@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectMotifs, type MotifDetectionInput } from "./detect";
+import { detectMotifs, EVIDENCE_CLASS, type MotifDetectionInput } from "./detect";
 
 /**
  * Detector behavior on constructed positions. The C4 fixture suite
@@ -158,7 +158,7 @@ describe("tablebase motifs", () => {
         tbAfter: { wdl: -2, dtz: null }, // opponent POV loss = mover still wins
       })
     );
-    expect(detections.every((d) => d.evidenceClass !== 6)).toBe(true);
+    expect(detections.every((d) => d.evidenceClass !== EVIDENCE_CLASS.mate)).toBe(true);
   });
 });
 

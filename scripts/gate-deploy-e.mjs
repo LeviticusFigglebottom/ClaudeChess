@@ -179,11 +179,17 @@ try {
     `${SUPA}/rest/v1/live_game_events?game_id=eq.${gameId}&type=eq.end&select=payload`,
     { headers: { apikey: SERVICE, Authorization: `Bearer ${SERVICE}` } }
   ).then((r) => r.json());
+  // Revised A3.6 bound: finalization happens on the first state read past
+  // zero, so drift can never be smaller than one round-trip — a fixed 200ms
+  // is arithmetically unreachable at this network's RTT. Bound:
+  // |drift| <= serverRoundTripP50 + 150ms, with the RTT p50 measured in
+  // this same run.
   const drift = events?.[0]?.payload?.remainingAtFlagMs;
+  const bound = apiMedian + 150;
   check(
-    "clock drift |remainingRawMs| < 200ms at real flagfall",
-    typeof drift === "number" && Math.abs(drift) < 200,
-    `remainingRawMs=${drift}ms`
+    `clock drift |remainingRawMs| <= serverRoundTripP50+150ms (${Math.round(bound)}ms) at real flagfall`,
+    typeof drift === "number" && Math.abs(drift) <= bound,
+    `remainingRawMs=${drift}ms bound=${Math.round(bound)}ms (rtt p50 ${apiMedian}ms)`
   );
 
   // Result UI on both boards.

@@ -129,6 +129,22 @@ export const MOTIF_TO_PUZZLE_THEMES: Record<BlunderMotif, MotifDrillMapping> = {
     themes: ["exposedKing"],
     drillable: true,
   },
+  // Forgone class (Task 3) — the tactic bestPv would have cashed. Missed
+  // tactics are the MOST drillable motifs: finding the shot is exactly what
+  // puzzles pose.
+  MISSED_FORK: { themes: ["fork"], drillable: true },
+  MISSED_PIN: { themes: ["pin"], drillable: true },
+  MISSED_SKEWER: { themes: ["skewer"], drillable: true },
+  MISSED_DISCOVERED_ATTACK: { themes: ["discoveredAttack"], drillable: true },
+  MISSED_BACK_RANK: { themes: ["backRankMate"], drillable: true },
+  MISSED_OVERLOAD: {
+    themes: ["deflection", "capturingDefender"],
+    drillable: true,
+    note: "Same mapping basis as OVERLOADED_DEFENDER.",
+  },
+  MISSED_REMOVING_THE_DEFENDER: { themes: ["capturingDefender", "deflection"], drillable: true },
+  MISSED_TRAPPED_PIECE: { themes: ["trappedPiece"], drillable: true },
+  MISSED_ZWISCHENZUG: { themes: ["intermezzo"], drillable: true },
   UNCLEAR: {
     themes: [],
     drillable: false,
