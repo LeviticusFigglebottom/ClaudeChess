@@ -35,15 +35,18 @@ export async function detectAndStoreMotifs(
       row.classification !== null &&
       (ERROR_CLASSES as readonly string[]).includes(row.classification)
   );
-  if (errorRows.length === 0) return 0;
 
-  // Clear existing tags for these plies (idempotent backfill).
+  // Clear existing tags for the WHOLE game, not just current error plies —
+  // a ply reclassified out of the error set (e.g. the borderline
+  // verification pass downgrading a BLUNDER to INACCURACY) must lose its
+  // stale tags, or every population metric over blunder_tags drifts.
   await db.delete(blunderTags).where(
     inArray(
       blunderTags.plyId,
-      errorRows.map((row) => row.id)
+      rows.map((row) => row.id)
     )
   );
+  if (errorRows.length === 0) return 0;
 
   let stored = 0;
   for (const row of errorRows) {

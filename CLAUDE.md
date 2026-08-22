@@ -2,7 +2,7 @@
 
 Read `docs/SPEC.md`, `docs/ADDENDUM_A.md`, `docs/ADDENDUM_B.md`, and `docs/ADDENDUM_C.md` before changing anything. They govern every decision; phase gates are falsifiable and must not be skipped. Current status: **Phases 0–5 all built and gate-verified (0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 4.5, 5). Phase 1's bot-calibration finals run in dedicated sessions (their files: `src/lib/engine` bot policy, `bot-calibration.json`, `data/calibration/`, `scripts/arena*`, `scripts/calibrate*` — do not touch). Gate evidence: README tables + `scripts/gate-*.mts`.**
 
-One gate criterion is knowingly red: C4's "UNCLEAR < 15% on the blunder sample" measures **26.8%** (48/179) — the surviving cases are quiet-refutation positional errors the closed C2.3 vocabulary cannot name with decidable geometry (analysis in `scripts/dbg-unclear-swing.mts`, discussion in README). Do not chase the number with soft detectors; the fixture suite's rank-1 guarantee is the thing to protect. Two corrections made on gate evidence, both documented in code:
+One criterion is knowingly red: C4's UNCLEAR bar (spec < 15%, voided post-gate; revised target < 18% after the ten-motif structural class in `src/lib/motifs/structural.ts` was commissioned and landed) measures **24.0%** (43/179 blunders; was 26.8% pre-structural). The survivors are quiet-both-sides positional slides plus a few missed-cashing tactics whose punishment is the forgone win (analysis in `scripts/dbg-unclear-swing.mts`, full account in README). Do not chase the number with soft detectors; the fixture suite's rank-1 guarantee (181 fixtures) is the thing to protect. Two corrections made on gate evidence, both documented in code:
 - **§4.2 loss thresholds are 5/10/15 wp, not 10/20/30** — the spec transcribed Lichess's 0.1/0.2/0.3 winning-chances deltas ([−1,1] scale) onto 0–100 without halving. Caught by the Phase 2 agreement gate (~4–5× fewer blunders than Lichess on identical evals); corrected in `src/lib/eval/classify.ts` (long comment there), plus a **borderline verification pass** (`verifyBorderline`, depth 24) refining plies whose loss lands near the 10/15 boundaries.
 - **`explorer.lichess.ovh` refuses some egress networks** (nginx 401 while `tablebase.lichess.ovh` answers 200 — the dev container is affected). `EXPLORER_BASE_URL` points the shared client (`src/lib/explorer`) at a stand-in; `scripts/mock-explorer.mjs` serves deterministic synthetic payloads for gates. §9.1's empirical score and §9.4's tree builds degrade gracefully (surfaced `upstreamError`, never a crash).
 
@@ -10,7 +10,7 @@ One gate criterion is knowingly red: C4's "UNCLEAR < 15% on the blunder sample" 
 
 ```bash
 npm run dev              # dev server (localhost:3000)
-npm test                 # vitest — 423 tests incl. chessops⇄Stockfish perft cross-checks, the C4 motif fixture suite (159, every fixture rank-1), and PGlite account-system tests
+npm test                 # vitest — 445 tests incl. chessops⇄Stockfish perft cross-checks, the C4 motif fixture suite (181, every fixture rank-1), and PGlite account-system tests
 npm run build            # production build (lint + typecheck included)
 npm run gate             # browser gate vs http://localhost:3000 (needs `npm run start` first)
 npm run gate -- --url <url>     # gate vs a deployed preview; appends docs/gate-history.jsonl

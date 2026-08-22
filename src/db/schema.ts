@@ -125,6 +125,19 @@ export const blunderMotifEnum = pgEnum("blunder_motif", [
   "OPPOSITION_LOST",
   "TIME_PRESSURE",
   "TUNNEL_VISION_POST_FORCING",
+  // Structural class (C2.3 extension): positional mechanisms, deterministic
+  // geometry like everything above, ranked below geometric — a tactical
+  // mechanism, where one exists, is always the better explanation.
+  "HOLE_CREATED",
+  "OUTPOST_CONCEDED",
+  "BISHOP_PAIR_SURRENDERED",
+  "STRUCTURE_DAMAGED",
+  "BAD_PIECE_PLACEMENT",
+  "FILE_OPENED_TOWARD_OWN_KING",
+  "SPACE_CONCEDED",
+  "GOOD_PIECE_TRADED",
+  "PAWN_BREAK_MISSED",
+  "KING_WALK",
   "UNCLEAR",
 ]);
 

@@ -2,6 +2,7 @@ import { opposite } from "chessops/util";
 import type { Color, Square } from "chessops";
 import { GamePosition } from "@/lib/chess/position";
 import { isVariantId, type VariantId } from "@/lib/chess/variant";
+import { blunderMotifEnum } from "@/db/schema";
 import {
   attackersOf,
   defendersOf,
@@ -21,6 +22,7 @@ import {
   type Pos,
 } from "./primitives";
 import { attacks, ray, between } from "chessops/attacks";
+import { structuralDetectors } from "./structural";
 
 /**
  * C2.3 deterministic motif detectors. A motif is a property of the
@@ -31,39 +33,32 @@ import { attacks, ray, between } from "chessops/attacks";
  * explanation call consumes as proven input.
  *
  * Confidence encodes evidence class (C2.4): tablebase 1.0 > mate 0.95 >
- * SEE 0.9 > geometric 0.85 > data-computed 1.0 (ranked below despite the
- * number — the class ranks, not the confidence) > heuristic 0.6.
+ * SEE 0.9 > geometric 0.85 > STRUCTURAL 0.75 (the positional class — a
+ * tactical mechanism, where one exists, is always the better explanation)
+ * > data-computed 1.0 (ranked below despite the number — the class ranks,
+ * not the confidence) > heuristic 0.6.
  */
 
-export type MotifName =
-  | "HANGING_PIECE"
-  | "OVERLOADED_DEFENDER"
-  | "PINNED_PIECE_MOVED"
-  | "BACK_RANK"
-  | "FORK_ALLOWED"
-  | "SKEWER_ALLOWED"
-  | "DISCOVERED_ATTACK_MISSED"
-  | "TRAPPED_PIECE"
-  | "REMOVING_THE_DEFENDER"
-  | "ZWISCHENZUG_MISSED"
-  | "KING_SAFETY_COLLAPSE"
-  | "PAWN_STRUCTURE_COLLAPSE"
-  | "MATERIALISM"
-  | "PREMATURE_ATTACK"
-  | "PASSIVITY"
-  | "ENDGAME_TECHNIQUE"
-  | "PAWN_RACE_MISCOUNT"
-  | "OPPOSITION_LOST"
-  | "TIME_PRESSURE"
-  | "TUNNEL_VISION_POST_FORCING"
-  | "UNCLEAR";
+/** One source of truth: the DB enum. Detect can only emit storable motifs. */
+export type MotifName = (typeof blunderMotifEnum.enumValues)[number];
+
+/** C2.4 precedence, higher wins. */
+export const EVIDENCE_CLASS = {
+  tb: 7,
+  mate: 6,
+  see: 5,
+  geometric: 4,
+  structural: 3,
+  data: 2,
+  heuristic: 1,
+} as const;
 
 export type Evidence = Record<string, unknown>;
 
 export interface MotifDetection {
   motif: MotifName;
   confidence: number;
-  /** C2.4 evidence class, for ranking: 6 tb, 5 mate, 4 see, 3 geo, 2 data, 1 heuristic. */
+  /** C2.4 evidence class (EVIDENCE_CLASS), for ranking. */
   evidenceClass: number;
   /** Material at stake in cp — the within-class tiebreaker. */
   stakeCp: number;
@@ -104,7 +99,7 @@ export interface MotifDetectionInput {
   runMobility?: { start: number; end: number };
 }
 
-interface Ctx {
+export interface Ctx {
   input: MotifDetectionInput;
   variant: VariantId;
   before: Pos;
@@ -223,7 +218,7 @@ function tbDetectors(ctx: Ctx): MotifDetection[] {
     detections.push({
       motif: "OPPOSITION_LOST",
       confidence: 1.0,
-      evidenceClass: 6,
+      evidenceClass: EVIDENCE_CLASS.tb,
       stakeCp: 900,
       evidence: { ...evidence, pieceCount, kingMove: input.movedUci },
     });
@@ -235,7 +230,7 @@ function tbDetectors(ctx: Ctx): MotifDetection[] {
     detections.push({
       motif: "PAWN_RACE_MISCOUNT",
       confidence: 1.0,
-      evidenceClass: 6,
+      evidenceClass: EVIDENCE_CLASS.tb,
       stakeCp: 800,
       evidence: { ...evidence, refutationPromotes: true },
     });
@@ -244,7 +239,7 @@ function tbDetectors(ctx: Ctx): MotifDetection[] {
   detections.push({
     motif: "ENDGAME_TECHNIQUE",
     confidence: 1.0,
-    evidenceClass: 6,
+    evidenceClass: EVIDENCE_CLASS.tb,
     stakeCp: 500,
     evidence,
   });
@@ -304,7 +299,7 @@ function backRank(ctx: Ctx): MotifDetection | null {
   return {
     motif: "BACK_RANK",
     confidence: 0.95,
-    evidenceClass: 5,
+    evidenceClass: EVIDENCE_CLASS.mate,
     stakeCp: 10_000,
     evidence: {
       matingSquare: squareName(matingSquare),
@@ -352,7 +347,7 @@ function missedBackRankMate(ctx: Ctx): MotifDetection | null {
   return {
     motif: "BACK_RANK",
     confidence: 0.9,
-    evidenceClass: 5,
+    evidenceClass: EVIDENCE_CLASS.mate,
     stakeCp: 10_000,
     evidence: {
       missed: true,
@@ -387,7 +382,7 @@ function mateAllowed(ctx: Ctx): MotifDetection | null {
   return {
     motif: "KING_SAFETY_COLLAPSE",
     confidence: 0.85,
-    evidenceClass: 5,
+    evidenceClass: EVIDENCE_CLASS.mate,
     stakeCp: 10_000,
     evidence: {
       forcedMate: true,
@@ -395,6 +390,22 @@ function mateAllowed(ctx: Ctx): MotifDetection | null {
       zoneHits,
     },
   };
+}
+
+/** Value of whatever the PLAYED move captured (0 for a quiet move). */
+function capturedValueOfMove(ctx: Ctx): number {
+  try {
+    const { to } = uciSquares(ctx.input.movedUci);
+    const victim = ctx.before.board.get(to);
+    if (victim && victim.color !== ctx.mover) {
+      return SEE_VALUES[victim.role === "knight" ? "knight" : victim.role] ?? 0;
+    }
+    // En passant.
+    if (ctx.input.movedSan.includes("x")) return SEE_VALUES.pawn;
+  } catch {
+    return 0;
+  }
+  return 0;
 }
 
 // --- SEE-proven (0.9) ---
@@ -409,12 +420,25 @@ function hangingPiece(ctx: Ctx): MotifDetection | null {
   if (attackersOf(ctx.after.board, square, opponent).isEmpty()) return null;
   const captureSee = see(ctx.after, first.uci);
   if (captureSee <= 0) return null;
+  // A RECAPTURE completing an even trade WE initiated is not a hang: when
+  // their capture lands on our move's own destination square, net out what
+  // we just took (minor-vs-minor tolerance 60cp). Captures elsewhere are
+  // mutual grabs — the piece was genuinely en prise.
+  try {
+    const ourTo = uciSquares(ctx.input.movedUci).to;
+    if (square === ourTo) {
+      const movedCapture = capturedValueOfMove(ctx);
+      if (captureSee <= movedCapture + 60) return null;
+    }
+  } catch {
+    /* unparseable move — keep the raw SEE verdict */
+  }
 
   const undefended = defendersOf(ctx.after.board, square, ctx.mover).isEmpty();
   return {
     motif: "HANGING_PIECE",
     confidence: undefended ? 0.9 : 0.75,
-    evidenceClass: 4,
+    evidenceClass: EVIDENCE_CLASS.see,
     stakeCp: first.capturedValue,
     evidence: {
       square: squareName(square),
@@ -454,7 +478,7 @@ function materialism(ctx: Ctx): MotifDetection | null {
   return {
     motif: "MATERIALISM",
     confidence: 0.9,
-    evidenceClass: 4,
+    evidenceClass: EVIDENCE_CLASS.see,
     stakeCp: opponentGain,
     evidence: {
       grabbed,
@@ -482,7 +506,7 @@ function overloadedDefender(ctx: Ctx): MotifDetection | null {
   return {
     motif: "OVERLOADED_DEFENDER",
     confidence: 0.85,
-    evidenceClass: 3,
+    evidenceClass: EVIDENCE_CLASS.geometric,
     stakeCp: r0.capturedValue + r2.capturedValue,
     evidence: {
       defender: squareName(defender),
@@ -506,7 +530,7 @@ function removingTheDefender(ctx: Ctx): MotifDetection | null {
       return {
         motif: "REMOVING_THE_DEFENDER",
         confidence: 0.85,
-        evidenceClass: 3,
+        evidenceClass: EVIDENCE_CLASS.geometric,
         stakeCp: first.capturedValue + step.capturedValue,
         evidence: {
           removedDefender: squareName(removed),
@@ -539,7 +563,7 @@ function pinnedPieceMoved(ctx: Ctx): MotifDetection | null {
   return {
     motif: "PINNED_PIECE_MOVED",
     confidence: 0.85,
-    evidenceClass: 3,
+    evidenceClass: EVIDENCE_CLASS.geometric,
     stakeCp: behindPiece ? SEE_VALUES[behindPiece.role] : 500,
     evidence: {
       movedFrom: squareName(from),
@@ -550,43 +574,72 @@ function pinnedPieceMoved(ctx: Ctx): MotifDetection | null {
   };
 }
 
-function forkAllowed(ctx: Ctx): MotifDetection | null {
-  const first = ctx.refutationSteps[0];
-  if (!first) return null;
-  const { to: forkSquare } = uciSquares(first.uci);
-  const afterFirst = posFromFen(ctx.refutationFens[1] ?? "");
-  const forker = afterFirst.board.get(forkSquare);
+/**
+ * Fork geometry at refutation step `stepIndex`: the enemy piece landing
+ * there attacks ≥2 of the mover's high-value targets (king counts; non-king
+ * captures must not lose on SEE), evaluated on the position after that step.
+ */
+function forkGeometryAt(
+  ctx: Ctx,
+  stepIndex: number
+): Omit<MotifDetection, "confidence"> | null {
+  const step = ctx.refutationSteps[stepIndex];
+  if (!step) return null;
+  const { to: forkSquare } = uciSquares(step.uci);
+  const afterStep = posFromFen(ctx.refutationFens[stepIndex + 1] ?? "");
+  const forker = afterStep.board.get(forkSquare);
   if (!forker || forker.color === ctx.mover) return null;
-  const reach = attacks(forker, forkSquare, afterFirst.board.occupied);
+  const reach = attacks(forker, forkSquare, afterStep.board.occupied);
   const targets: { square: Square; value: number; role: string }[] = [];
-  for (const target of reach.intersect(afterFirst.board[ctx.mover])) {
-    const piece = afterFirst.board.get(target);
+  for (const target of reach.intersect(afterStep.board[ctx.mover])) {
+    const piece = afterStep.board.get(target);
     if (!piece) continue;
     const isKing = piece.role === "king";
     if (!isKing && SEE_VALUES[piece.role] < SEE_VALUES.knight) continue;
     if (!isKing) {
       const captureUci = `${squareName(forkSquare)}${squareName(target)}`;
-      if (see(afterFirst, captureUci) < 0) continue;
+      if (see(afterStep, captureUci) < 0) continue;
     }
     targets.push({ square: target, value: isKing ? 10_000 : SEE_VALUES[piece.role], role: piece.role });
   }
-  const hasKing = targets.some((t) => t.role === "king");
   if (targets.length < 2) return null;
-  if (!hasKing && targets.length < 2) return null;
   const stake = targets
     .filter((t) => t.role !== "king")
     .reduce((max, t) => Math.max(max, t.value), 0);
   return {
     motif: "FORK_ALLOWED",
-    confidence: 0.85,
-    evidenceClass: 3,
+    evidenceClass: EVIDENCE_CLASS.geometric,
     stakeCp: stake,
     evidence: {
       forkSquare: squareName(forkSquare),
       forker: forker.role,
       targets: targets.map((t) => ({ square: squareName(t.square), role: t.role })),
-      move: first.uci,
+      move: step.uci,
     },
+  };
+}
+
+function forkAllowed(ctx: Ctx): MotifDetection | null {
+  const direct = forkGeometryAt(ctx, 0);
+  if (direct) return { ...direct, confidence: 0.85 };
+  // Post-exchange fork: the refutation's first pair is a null-net exchange —
+  // their capture on square S, our recapture on the same S regaining at
+  // least what was taken — and THEIR NEXT MOVE is the fork. The exchange is
+  // a forced prefix, not the punishment; the fork is what the refutation
+  // demonstrates. The same-square null-net gate is what keeps this from
+  // attributing arbitrary deep tactics to the move.
+  const s0 = ctx.refutationSteps[0];
+  const s1 = ctx.refutationSteps[1];
+  if (!s0 || !s1 || s0.capturedValue <= 0) return null;
+  const exchangeSquare = uciSquares(s0.uci).to;
+  if (uciSquares(s1.uci).to !== exchangeSquare || s1.capturedValue <= 0) return null;
+  if (s1.capturedValue < s0.capturedValue - 60) return null;
+  const post = forkGeometryAt(ctx, 2);
+  if (!post) return null;
+  return {
+    ...post,
+    confidence: 0.8,
+    evidence: { ...post.evidence, viaExchangeOn: squareName(exchangeSquare) },
   };
 }
 
@@ -620,7 +673,7 @@ function skewerAllowed(ctx: Ctx): MotifDetection | null {
       return {
         motif: "SKEWER_ALLOWED",
         confidence: 0.85,
-        evidenceClass: 3,
+        evidenceClass: EVIDENCE_CLASS.geometric,
         stakeCp: backValue,
         evidence: {
           attacker: squareName(from),
@@ -660,7 +713,7 @@ function discoveredAttackMissed(ctx: Ctx): MotifDetection | null {
   return {
     motif: "DISCOVERED_ATTACK_MISSED",
     confidence: 0.85,
-    evidenceClass: 3,
+    evidenceClass: EVIDENCE_CLASS.geometric,
     stakeCp: targetValue,
     evidence: {
       revealer: first.uci,
@@ -684,7 +737,7 @@ function trappedPiece(ctx: Ctx): MotifDetection | null {
     return {
       motif: "TRAPPED_PIECE",
       confidence: 0.85,
-      evidenceClass: 3,
+      evidenceClass: EVIDENCE_CLASS.geometric,
       stakeCp: SEE_VALUES[piece.role],
       evidence: {
         square: squareName(square),
@@ -705,7 +758,8 @@ function trappedPiece(ctx: Ctx): MotifDetection | null {
  * first" pattern the UNCLEAR sample was full of.
  */
 function deepHangingPiece(ctx: Ctx): MotifDetection | null {
-  let moverCounterplay = 0;
+  // Same net-trade discipline as hangingPiece.
+  let moverCounterplay = capturedValueOfMove(ctx);
   for (const [index, step] of ctx.refutationSteps.slice(0, 5).entries()) {
     if (index === 0) continue; // hangingPiece's territory
     if (step.mover === ctx.mover) {
@@ -734,7 +788,7 @@ function deepHangingPiece(ctx: Ctx): MotifDetection | null {
     return {
       motif: "HANGING_PIECE",
       confidence: captureSee > 0 ? 0.65 : 0.62,
-      evidenceClass: 3,
+      evidenceClass: EVIDENCE_CLASS.geometric,
       stakeCp: step.capturedValue,
       evidence: {
         square: squareName(square),
@@ -771,7 +825,7 @@ function openingKingWalk(ctx: Ctx): MotifDetection | null {
   return {
     motif: "KING_SAFETY_COLLAPSE",
     confidence: 0.6,
-    evidenceClass: 1,
+    evidenceClass: EVIDENCE_CLASS.heuristic,
     stakeCp: 200,
     evidence: {
       kingWalk: true,
@@ -805,7 +859,7 @@ function failedToCastle(ctx: Ctx): MotifDetection | null {
   return {
     motif: "KING_SAFETY_COLLAPSE",
     confidence: 0.6,
-    evidenceClass: 1,
+    evidenceClass: EVIDENCE_CLASS.heuristic,
     stakeCp: 300,
     evidence: {
       failedToCastle: true,
@@ -832,7 +886,7 @@ function kingSafetyCollapse(ctx: Ctx): MotifDetection | null {
   return {
     motif: "KING_SAFETY_COLLAPSE",
     confidence: 0.85,
-    evidenceClass: 3,
+    evidenceClass: EVIDENCE_CLASS.geometric,
     stakeCp: ctx.finalIsMate ? 10_000 : 400,
     evidence: {
       kingZoneAttackersBefore: beforeAttackers,
@@ -857,13 +911,13 @@ function pawnStructureCollapse(ctx: Ctx): MotifDetection | null {
   return {
     motif: "PAWN_STRUCTURE_COLLAPSE",
     confidence: 0.85,
-    evidenceClass: 3,
+    evidenceClass: EVIDENCE_CLASS.geometric,
     stakeCp: 150,
     evidence: { defectsBefore, defectsAfter },
   };
 }
 
-function pawnDefects(pos: Pos, color: Color): number {
+export function pawnDefects(pos: Pos, color: Color): number {
   const pawns = pos.board.pawn.intersect(pos.board[color]);
   const files = new Array(8).fill(0) as number[];
   for (const pawn of pawns) files[pawn % 8]!++;
@@ -903,7 +957,7 @@ function zwischenzugMissed(ctx: Ctx): MotifDetection | null {
   return {
     motif: "ZWISCHENZUG_MISSED",
     confidence: 0.6,
-    evidenceClass: 1,
+    evidenceClass: EVIDENCE_CLASS.heuristic,
     stakeCp: 200,
     evidence: {
       played: input.movedUci,
@@ -932,7 +986,7 @@ function prematureAttack(ctx: Ctx): MotifDetection | null {
   return {
     motif: "PREMATURE_ATTACK",
     confidence: 0.6,
-    evidenceClass: 1,
+    evidenceClass: EVIDENCE_CLASS.heuristic,
     stakeCp: 150,
     evidence: {
       pressureBefore,
@@ -961,7 +1015,7 @@ function passivity(ctx: Ctx): MotifDetection | null {
   return {
     motif: "PASSIVITY",
     confidence: 0.6,
-    evidenceClass: 1,
+    evidenceClass: EVIDENCE_CLASS.heuristic,
     stakeCp: 100,
     evidence: { mobilityStart: start, mobilityEnd: end, quietRun: recent },
   };
@@ -974,7 +1028,7 @@ function tunnelVision(ctx: Ctx): MotifDetection | null {
   return {
     motif: "TUNNEL_VISION_POST_FORCING",
     confidence: 1.0,
-    evidenceClass: 2,
+    evidenceClass: EVIDENCE_CLASS.data,
     stakeCp: 0,
     evidence: { priorForcingPlies: 3 },
   };
@@ -1018,6 +1072,9 @@ export function detectMotifs(input: MotifDetectionInput): MotifDetection[] {
   push(openingKingWalk(ctx));
   push(failedToCastle(ctx));
   push(pawnStructureCollapse(ctx));
+  // Structural class (positional mechanisms) — registered after the
+  // tactical detectors; class ranking keeps them below geometric.
+  for (const detection of structuralDetectors(ctx)) push(detection);
   push(zwischenzugMissed(ctx));
   push(prematureAttack(ctx));
   push(passivity(ctx));
@@ -1034,7 +1091,7 @@ export function detectMotifs(input: MotifDetectionInput): MotifDetection[] {
     fired.push({
       motif: "TIME_PRESSURE",
       confidence: 1.0,
-      evidenceClass: 2,
+      evidenceClass: EVIDENCE_CLASS.data,
       stakeCp: 0,
       evidence: { clockMsRemaining: input.clockMsRemaining },
     });

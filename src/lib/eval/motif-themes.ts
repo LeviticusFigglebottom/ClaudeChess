@@ -79,6 +79,56 @@ export const MOTIF_TO_PUZZLE_THEMES: Record<BlunderMotif, MotifDrillMapping> = {
     drillable: false,
     note: "A search-habit error defined by the preceding move sequence; no puzzle set encodes it.",
   },
+  // Structural class — mostly plan-level: puzzle sets encode tactics, so
+  // several are honestly drill-unavailable rather than mapped by force.
+  HOLE_CREATED: {
+    themes: [],
+    drillable: false,
+    note: "A square-weakness commitment; puzzles always contain a shot, which teaches the opposite habit.",
+  },
+  OUTPOST_CONCEDED: {
+    themes: [],
+    drillable: false,
+    note: "No outpost theme exists; marked unavailable rather than stretched.",
+  },
+  BISHOP_PAIR_SURRENDERED: {
+    themes: [],
+    drillable: false,
+    note: "A long-horizon material-quality judgment; no puzzle equivalent.",
+  },
+  STRUCTURE_DAMAGED: {
+    themes: ["advancedPawn", "pawnEndgame"],
+    drillable: true,
+    note: "Approximate, same basis as PAWN_STRUCTURE_COLLAPSE.",
+  },
+  BAD_PIECE_PLACEMENT: {
+    themes: ["trappedPiece"],
+    drillable: true,
+    note: "Trapped-piece drills train the entombment radar even when the piece survives.",
+  },
+  FILE_OPENED_TOWARD_OWN_KING: {
+    themes: ["exposedKing", "kingsideAttack"],
+    drillable: true,
+  },
+  SPACE_CONCEDED: {
+    themes: [],
+    drillable: false,
+    note: "Plan-level; no puzzle set encodes space counts.",
+  },
+  GOOD_PIECE_TRADED: {
+    themes: [],
+    drillable: false,
+    note: "Exchange-quality judgment; puzzles cannot pose it without an engine bar.",
+  },
+  PAWN_BREAK_MISSED: {
+    themes: ["quietMove"],
+    drillable: true,
+    note: "Approximate — quiet-move puzzles reward the non-forcing committal move.",
+  },
+  KING_WALK: {
+    themes: ["exposedKing"],
+    drillable: true,
+  },
   UNCLEAR: {
     themes: [],
     drillable: false,
