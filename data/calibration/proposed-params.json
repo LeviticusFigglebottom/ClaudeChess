@@ -109,12 +109,12 @@
       "extrapolated": true
     },
     "2000": {
-      "pBlunder": 0.182,
-      "temperature": 3.32,
-      "formulaEquivalent": 1403,
+      "pBlunder": 0.192,
+      "temperature": 3.42,
+      "formulaEquivalent": 1372,
       "segment": "d18",
       "extrapolated": true,
-      "method": "bisection (validation probe blowout): r*=1531 curve inversion measured 2512+/-349, r*=1470 measured 2269+/-200, r*=1403 measured 2035+/-153 (PASS). MultiPV varies per band inside d18 (1800=MPV12, 2000=MPV10), so cross-band curve nodes under-predicted this region; same-shape slope ~4.0 Elo per formula-r point."
+      "method": "second bisection: full-150 at r*=1403 measured 2090+/-57 (missed the +/-75 gate by +90 after the 20-game checkpoint read +35). Same-shape points r1403=2090+/-57, r1470=2269+/-200, r1531=2512+/-349 give local slope ~2.9 Elo/r; 1403 - 90/2.9 = 1372. Slope range 2.0-3.3 lands 1988-2028 either way."
     },
     "2200": {
       "pBlunder": 0.09850889233369109,
