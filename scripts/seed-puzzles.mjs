@@ -21,18 +21,24 @@ const sql = postgres(DATABASE_URL, { prepare: false });
 let upserted = 0;
 for (let i = 0; i < rows.length; i += 500) {
   const batch = rows.slice(i, i + 500);
+  // jsonb_to_recordset (not the sql() insert helper): moves_uci and themes
+  // are jsonb ARRAY columns — stringifying them client-side stored jsonb
+  // string scalars, which broke every SQL-level operator on them (the
+  // `themes ?|` filter matched nothing; migration 0020 repaired old rows).
   await sql`
-    insert into puzzles ${sql(
+    insert into puzzles (id, fen, moves_uci, rating, rating_deviation, themes, popularity)
+    select t.id, t.fen, t.moves_uci, t.rating, t.rating_deviation, t.themes, t.popularity
+    from jsonb_to_recordset(${sql.json(
       batch.map((puzzle) => ({
         id: puzzle.id,
         fen: puzzle.fen,
-        moves_uci: JSON.stringify(puzzle.movesUci),
+        moves_uci: puzzle.movesUci,
         rating: puzzle.rating,
         rating_deviation: puzzle.ratingDeviation,
-        themes: JSON.stringify(puzzle.themes),
+        themes: puzzle.themes,
         popularity: puzzle.popularity,
       }))
-    )}
+    )}) as t(id text, fen text, moves_uci jsonb, rating int, rating_deviation int, themes jsonb, popularity int)
     on conflict (id) do update set
       rating = excluded.rating,
       rating_deviation = excluded.rating_deviation,

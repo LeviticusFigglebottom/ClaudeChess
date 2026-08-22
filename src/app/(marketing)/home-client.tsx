@@ -2,13 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAnalysisRunner } from "@/components/analysis-runner";
 import { useAuth } from "@/components/auth-context";
 import { api } from "@/lib/account/client";
-import {
-  clientBatchCapability,
-  runClientBatchAnalysis,
-  type BatchProgress,
-} from "@/lib/analysis/client-batch";
+import { analysisRunner, needsAnalysis } from "@/lib/analysis/runner";
 
 /**
  * Home switches on auth: guests (and local-only mode) see the marketing
@@ -92,9 +89,7 @@ function Dashboard({ handle }: { handle: string }) {
   useEffect(reload, [reload]);
 
   const latest = (games ?? []).find((game) => !game.isStudy) ?? null;
-  const unanalyzed = (games ?? []).filter(
-    (game) => !game.isStudy && game.plyCount > 0 && game.reviewedCount < game.plyCount
-  );
+  const unanalyzed = (games ?? []).filter(needsAnalysis);
 
   return (
     <div className="py-2">
@@ -147,67 +142,31 @@ function SyncCard({
   unanalyzed: GameRowPayload[];
   onDone: () => void;
 }) {
-  const [running, setRunning] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const abortRef = useRef(false);
+  // The chain runs in the GLOBAL runner so it survives tab changes; this
+  // card mirrors the runner's snapshot and refreshes when it goes idle.
+  const snap = useAnalysisRunner();
+  const running = snap.importing
+    ? snap.importing
+    : snap.current
+      ? `analyzing ${snap.current.label}${
+          snap.current.phase
+            ? ` · ${snap.current.phase.phase} ${snap.current.phase.done}/${snap.current.phase.total}`
+            : "…"
+        }${snap.queue.length > 0 ? ` — ${snap.queue.length} queued` : ""}`
+      : null;
+  const note = snap.note ?? (snap.lastResult && !snap.lastResult.ok && snap.lastResult.error !== "cancelled" ? `Analysis stopped: ${snap.lastResult.error}` : null);
 
-  const syncAndAnalyze = useCallback(async () => {
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    const busy = running !== null;
+    if (wasBusy.current && !busy) onDone();
+    wasBusy.current = busy;
+  }, [running, onDone]);
+
+  const syncAndAnalyze = useCallback(() => {
     if (!linked || linked.length === 0) return;
-    abortRef.current = false;
-    setNote(null);
-    let imported = 0;
-    let interrupted: string | null = null;
-    try {
-      for (const account of linked) {
-        setRunning(`importing from ${account.source === "chesscom" ? "chess.com" : "Lichess"}…`);
-        for (let chunk = 0; chunk < 40; chunk++) {
-          const response = await api<{ result: { imported: number; done: boolean } }>(
-            "/api/import",
-            { method: "POST", body: JSON.stringify({ action: "run", source: account.source }) }
-          );
-          imported += response.result.imported;
-          setRunning(
-            `importing from ${account.source === "chesscom" ? "chess.com" : "Lichess"}… ${imported}`
-          );
-          if (response.result.done) break;
-        }
-      }
-      const fresh = await api<{ games: GameRowPayload[] }>("/api/games?limit=50");
-      const queue = fresh.games.filter(
-        (game) => !game.isStudy && game.plyCount > 0 && game.reviewedCount < game.plyCount
-      );
-      if (queue.length > 0 && clientBatchCapability().ok) {
-        for (const [index, game] of queue.entries()) {
-          if (abortRef.current) break;
-          const label = (phase: BatchProgress | null) =>
-            setRunning(
-              `analyzing ${index + 1}/${queue.length}${
-                phase ? ` · ${phase.phase} ${phase.done}/${phase.total}` : "…"
-              }`
-            );
-          label(null);
-          const result = await runClientBatchAnalysis(game.id, label, () => undefined);
-          if (!result.ok) {
-            interrupted = `Analysis stopped: ${result.error}`;
-            break;
-          }
-        }
-      } else if (queue.length > 0) {
-        interrupted = `${queue.length} games waiting — open one to analyze it.`;
-      }
-      setNote(
-        interrupted ??
-          (imported > 0
-            ? `Imported ${imported} new game${imported === 1 ? "" : "s"} — all analyzed.`
-            : "Everything is up to date.")
-      );
-    } catch (error) {
-      setNote(error instanceof Error ? error.message : "Sync failed.");
-    } finally {
-      setRunning(null);
-      onDone();
-    }
-  }, [linked, onDone]);
+    void analysisRunner.syncAndAnalyze(linked.map((account) => account.source));
+  }, [linked]);
 
   return (
     <section className="card p-5">
@@ -240,9 +199,7 @@ function SyncCard({
             {running ? (
               <>
                 <button
-                  onClick={() => {
-                    abortRef.current = true;
-                  }}
+                  onClick={() => analysisRunner.stop()}
                   className="btn-ghost px-3 py-1.5 text-sm"
                 >
                   Stop
@@ -250,7 +207,7 @@ function SyncCard({
                 <p className="notation min-w-0 flex-1 truncate text-xs text-text-dim">{running}</p>
               </>
             ) : (
-              <button onClick={() => void syncAndAnalyze()} className="btn-primary px-4 py-1.5 text-sm">
+              <button onClick={syncAndAnalyze} className="btn-primary px-4 py-1.5 text-sm">
                 Import &amp; analyze
                 {unanalyzed.length > 0 ? ` (${unanalyzed.length} waiting)` : ""}
               </button>
