@@ -51,7 +51,7 @@ export function TrainHub() {
     <div>
       <h1 className="mb-1 text-2xl font-bold text-paper">Train</h1>
       <p className="mb-5 text-sm text-text-faint">
-        Diagnostic instruments over your own games. Dark by default — flip each on in Settings → Labs.
+        Diagnostic instruments over your own games — import and analyze a few games and every trainer lights up.
       </p>
       <div className="grid gap-4 md:grid-cols-2">
         {TRAINERS.map((trainer) => (
@@ -78,7 +78,7 @@ function TrainerCard({ flag, href, name, claim }: (typeof TRAINERS)[number]) {
           Open
         </Link>
       ) : (
-        <p className="text-xs text-text-faint">Enable in <a href="/settings" className="underline underline-offset-2">Settings → Labs</a>.</p>
+        <p className="text-xs text-text-faint">Disabled on this deployment.</p>
       )}
     </div>
   );

@@ -238,7 +238,8 @@ export function SettingsSections() {
         <section className="card p-5">
           <h2 className={heading}>Labs</h2>
           <p className="mb-2 text-xs text-text-faint">
-            Original trainers (§9) — ship dark by default; switches here turn them on for you.
+            Analysis-derived trainers — on for everyone by default (they read your analyzed
+            games and never touch live play). A deployment can still force one off.
           </p>
           {LABS_FLAGS.map(({ flag, name }) => (
             <label key={flag} className={`${row} cursor-pointer`}>
