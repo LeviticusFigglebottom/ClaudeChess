@@ -1,10 +1,10 @@
 {
   "bands": {
     "1000": {
-      "pBlunder": 0.378,
-      "temperature": 5.283,
-      "formulaEquivalent": 815,
-      "note": "1000 checkpoint blowout at 23g: curve r*=941 measured 1211+/-149 (nominal 211 outside). Drop 211 at slope ~1.7 (MPV18 measured 1.85 nearby) -> r*=815, predicted 970-1030."
+      "pBlunder": 0.4,
+      "temperature": 6.2,
+      "formulaEquivalent": null,
+      "note": "iteration 3, bracketed bisection: T5.28 measured 1152+/-171, T7.5 swept 0/30 (<=~940) — the T response cliffs in between. T=6.2 (20wp tail weight 0.040)."
     },
     "1200": {
       "pBlunder": 0.323,
