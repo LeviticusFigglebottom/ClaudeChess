@@ -205,26 +205,39 @@ export async function getLiveState(
   // Lazy flag finalize: the server is authoritative on time, so ANY state
   // read past flagfall ends the game — a throttled or vanished client can
   // never leave a flagged game hanging, and drift is bounded by the poll
-  // cadence rather than by client timers.
-  if (row.status === "active" && row.clockMode !== "daily") {
-    const state = clockStateOf(row);
-    if (isFlagged(state, now)) {
-      await withGame(db, gameId, async (tx, fresh) => {
-        if (fresh.status !== "active") return;
-        const freshState = clockStateOf(fresh);
-        if (!isFlagged(freshState, now)) return;
-        await finishGame(
-          tx,
-          fresh,
-          {
-            result: fresh.turn === "white" ? "0-1" : "1-0",
-            termination: "time forfeit",
-            remainingAtFlagMs: remainingRawMs(freshState, freshState.turn, now),
-          },
-          now
-        );
-      });
-      row = (await db.select().from(liveGames).where(eq(liveGames.id, gameId)))[0]!;
+  // cadence rather than by client timers. Daily (correspondence) games get
+  // the same treatment against their per-move budget: the cron sweep is only
+  // a backstop for games nobody loads (Vercel Hobby allows one daily cron —
+  // a daily-only sweep would otherwise leave expired games unfinalized for
+  // up to 24h).
+  if (row.status === "active") {
+    if (row.clockMode === "daily") {
+      if (dailyBudgetExceeded(row, now)) {
+        await withGame(db, gameId, async (tx, fresh) => {
+          await finalizeDailyExpiry(tx, fresh, now);
+        });
+        row = (await db.select().from(liveGames).where(eq(liveGames.id, gameId)))[0]!;
+      }
+    } else {
+      const state = clockStateOf(row);
+      if (isFlagged(state, now)) {
+        await withGame(db, gameId, async (tx, fresh) => {
+          if (fresh.status !== "active") return;
+          const freshState = clockStateOf(fresh);
+          if (!isFlagged(freshState, now)) return;
+          await finishGame(
+            tx,
+            fresh,
+            {
+              result: fresh.turn === "white" ? "0-1" : "1-0",
+              termination: "time forfeit",
+              remainingAtFlagMs: remainingRawMs(freshState, freshState.turn, now),
+            },
+            now
+          );
+        });
+        row = (await db.select().from(liveGames).where(eq(liveGames.id, gameId)))[0]!;
+      }
     }
   }
   const position = positionOf(row);
@@ -694,10 +707,41 @@ export async function activeLiveGameFor(db: Db, userId: string): Promise<string 
   return rows[0]?.id ?? null;
 }
 
+/** True when a daily game's side to move has exceeded the per-move budget. */
+function dailyBudgetExceeded(
+  row: Pick<LiveRow, "clockMode" | "turnStartedAt" | "clockInitialMs">,
+  now: number
+): boolean {
+  if (row.clockMode !== "daily" || !row.turnStartedAt) return false;
+  return now - row.turnStartedAt.getTime() > row.clockInitialMs;
+}
+
 /**
- * Correspondence sweep (A3.6): cron flags every daily game whose side to
- * move exceeded the per-move budget. Realtime cannot do this — nobody is
- * connected to a correspondence game at 4am.
+ * Inside withGame: finalize a daily game whose per-move budget has run out.
+ * Shared by the lazy state-read path (primary) and the cron sweep
+ * (backstop). Returns true when the game was finalized.
+ */
+async function finalizeDailyExpiry(tx: Db, row: LiveRow, now: number): Promise<boolean> {
+  if (row.status !== "active" || !dailyBudgetExceeded(row, now)) return false;
+  const elapsed = row.turnStartedAt ? now - row.turnStartedAt.getTime() : 0;
+  await finishGame(
+    tx,
+    row,
+    {
+      result: row.turn === "white" ? "0-1" : "1-0",
+      termination: "time forfeit",
+      remainingAtFlagMs: row.clockInitialMs - elapsed,
+    },
+    now
+  );
+  return true;
+}
+
+/**
+ * Correspondence sweep (A3.6): flags every daily game whose side to move
+ * exceeded the per-move budget. Since the Hobby-tier cron consolidation this
+ * is the BACKSTOP for games nobody loads — getLiveState finalizes expired
+ * daily games lazily on read, same as live flagfall.
  */
 export async function sweepDailyTimeouts(db: Db, now = Date.now()): Promise<number> {
   const cutoff = new Date(now - 1);
@@ -718,20 +762,7 @@ export async function sweepDailyTimeouts(db: Db, now = Date.now()): Promise<numb
   let flagged = 0;
   for (const { id } of stale) {
     await withGame(db, id, async (tx, row) => {
-      if (row.status !== "active") return;
-      const elapsed = row.turnStartedAt ? now - row.turnStartedAt.getTime() : 0;
-      if (elapsed <= row.clockInitialMs) return;
-      await finishGame(
-        tx,
-        row,
-        {
-          result: row.turn === "white" ? "0-1" : "1-0",
-          termination: "time forfeit",
-          remainingAtFlagMs: row.clockInitialMs - elapsed,
-        },
-        now
-      );
-      flagged++;
+      if (await finalizeDailyExpiry(tx, row, now)) flagged++;
     });
   }
   return flagged;

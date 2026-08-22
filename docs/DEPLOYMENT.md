@@ -9,7 +9,10 @@ its gate so the pass produces measured pass/fail values, not vibes.
 
 Framework preset: Next.js (repo root). `npm run build` is green locally on the
 branch tip — lint + typecheck included. `vercel.json` already carries the three
-cron routes (purge-deleted daily, auto-import weekly, daily-timeouts hourly).
+single consolidated cron (`/api/cron/daily` at 04:17 UTC — Hobby tier allows max
+2 once-daily jobs, so one dispatcher runs purge-deleted + the correspondence
+timeout backstop + Monday auto-import in sequence; correspondence timeouts
+finalize lazily on read as the primary mechanism).
 
 Environment variables (Production + Preview):
 
