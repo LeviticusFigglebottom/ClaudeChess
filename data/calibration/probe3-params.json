@@ -5,6 +5,12 @@
       "temperature": 3.32,
       "formulaEquivalent": 1403,
       "note": "iteration 2: same-shape (MPV10) points r1470=2269 and r1531=2512 give local slope ~4.0 Elo/r; 1470 - 269/4 = 1403. MPV varies per band inside d18, so cross-band nodes under-predicted this region."
+    },
+    "2200": {
+      "pBlunder": 0.157,
+      "temperature": 3.067,
+      "formulaEquivalent": 1480,
+      "note": "2200 checkpoint blowout: curve r*=1654 measured 2636+/-289 at 20g (nominal 436 outside CI). Same-shape MPV8 data is thin; refit uses the MPV10-measured local slope ~2.9 (range 2-3) from the 2000 bisection: 1654 - 436/2.9 ~= 1480."
     }
   }
 }
