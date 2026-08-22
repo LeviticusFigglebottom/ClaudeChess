@@ -5,6 +5,7 @@ import { AnalysisBoard } from "@/components/analysis-board";
 import { BotGameView } from "@/components/bot-game";
 import { GameSetupCard } from "@/components/game-setup";
 import { SettingsPanel } from "@/components/settings-panel";
+import { VsHumanCard } from "@/components/vs-human-card";
 import { useAuth } from "@/components/auth-context";
 import { usePrefs } from "@/components/prefs-context";
 import { useBotGame, type GameSetup } from "@/components/use-bot-game";
@@ -41,6 +42,7 @@ export function PlayClient() {
       {mode === "setup" && (
         <>
           <GameSetupCard onStart={startGame} onFreeBoard={() => setMode("analysis")} />
+          <VsHumanCard />
           <SettingsPanel />
         </>
       )}

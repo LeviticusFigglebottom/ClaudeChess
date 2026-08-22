@@ -82,6 +82,7 @@ export function AccountClient() {
         <UsageCard me={me} />
         <SessionsCard me={me} onChanged={reload} />
         <DataCard me={me} />
+        <FairplayCard />
         {me.isAdmin && <AdminCard />}
       </div>
     </Shell>
@@ -424,6 +425,51 @@ function AdminCard() {
         </button>
       </div>
       {message && <p className="mt-2 text-xs text-text-faint">{message}</p>}
+    </Card>
+  );
+}
+
+const SIGNAL_LABELS: Record<string, string> = {
+  engine_correlation: "Engine correlation",
+  accuracy_outlier: "Accuracy outlier",
+  movetime_entropy: "Move-time consistency",
+  tab_blur: "Tab switches in rated game",
+};
+
+function FairplayCard() {
+  const [signals, setSignals] = useState<
+    { id: string; gameId: string | null; signal: string; score: number; createdAt: string }[] | null
+  >(null);
+
+  useEffect(() => {
+    fetch("/api/account/fairplay")
+      .then(async (response) => (response.ok ? response.json() : { signals: [] }))
+      .then((body: { signals?: [] }) => setSignals(body.signals ?? []))
+      .catch(() => setSignals([]));
+  }, []);
+
+  return (
+    <Card title="Fair play">
+      <p className="mb-3 text-xs text-text-faint">
+        Signals recorded on your rated games (A2.3). They are informational — nothing is
+        automated off them — and this list shows you everything recorded about you.
+      </p>
+      {signals === null ? (
+        <p className="text-sm text-text-faint">Loading…</p>
+      ) : signals.length === 0 ? (
+        <p className="text-sm text-text-dim">No signals recorded.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {signals.map((row) => (
+            <li key={row.id} className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="text-text">{SIGNAL_LABELS[row.signal] ?? row.signal}</span>
+              <span className="notation text-xs text-text-dim">
+                {row.score.toFixed(2)} · {new Date(row.createdAt).toLocaleDateString()}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

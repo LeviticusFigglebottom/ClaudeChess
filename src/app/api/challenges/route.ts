@@ -52,10 +52,29 @@ export async function POST(request: Request) {
         }
         if (!id) throw new AccountError("bad_action", "id or token required.");
         const accepted = await acceptChallenge(db, user, id);
+        // Phase 4 handoff: an accepted challenge becomes a live game.
+        const { createLiveGame } = await import("@/lib/play");
+        const match = accepted.timeControl.match(/^(\d+)\+(\d+)$/);
+        const creatorIsWhite =
+          accepted.color === "white"
+            ? true
+            : accepted.color === "black"
+              ? false
+              : Math.random() < 0.5;
+        const game = await createLiveGame(db, {
+          whiteUserId: creatorIsWhite ? accepted.fromUserId : user.id,
+          blackUserId: creatorIsWhite ? user.id : accepted.fromUserId,
+          variant: accepted.variant as "standard" | "chess960",
+          clock: {
+            mode: "fischer",
+            initialMs: Number(match?.[1] ?? 300) * 1000,
+            incrementMs: Number(match?.[2] ?? 0) * 1000,
+          },
+          rated: accepted.rated,
+        });
         return NextResponse.json({
           challenge: await toChallengeView(db, accepted),
-          // Phase 4 replaces this with the created game's id + realtime channel.
-          play: null,
+          play: { gameId: game.id },
         });
       }
       case "decline": {

@@ -5,6 +5,7 @@ import {
   describeClock,
   isFlagged,
   remainingMs,
+  remainingRawMs,
   startClock,
   timeControlBucket,
   type ClockConfig,
@@ -79,6 +80,13 @@ describe("flagging", () => {
   it("opponent's clock does not run", () => {
     const state = startClock(createClock(fischer), 0);
     expect(remainingMs(state, "b", 60_000)).toBe(180_000);
+  });
+
+  it("remainingRawMs goes negative past flagfall (drift evidence); remainingMs clamps", () => {
+    const state = startClock(createClock(fischer), 0);
+    expect(remainingRawMs(state, "w", 180_150)).toBe(-150);
+    expect(remainingMs(state, "w", 180_150)).toBe(0);
+    expect(remainingRawMs(state, "w", 100_000)).toBe(80_000); // agrees pre-flag
   });
 });
 

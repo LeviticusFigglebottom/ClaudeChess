@@ -624,6 +624,100 @@ export const auditLog = pgTable(
   (table) => [index("audit_log_user_idx").on(table.userId, table.createdAt)]
 );
 
+// --- Multiplayer (Phase 4, §8/A3.5/A3.6) ---
+
+export const liveGameStatusEnum = pgEnum("live_game_status", ["active", "finished", "aborted"]);
+
+/**
+ * Live multiplayer games. THE SERVER IS AUTHORITATIVE on clock and legality
+ * (§8): every move replays server-side through the rules facade against
+ * this row, clocks are charged from turnStartedAt with the same clock
+ * module the UI renders from, and flagfall claims are verified against the
+ * server's own arithmetic. Clients never compute remaining time for scoring.
+ */
+export const liveGames = pgTable(
+  "live_games",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    whiteUserId: uuid("white_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    blackUserId: uuid("black_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    variant: variantEnum("variant").notNull().default("standard"),
+    startFen: text("start_fen").notNull(),
+    startPositionId: integer("start_position_id"),
+    /** 'fischer' | 'bronstein' | 'delay' | 'daily' (A3.6). */
+    clockMode: text("clock_mode").notNull(),
+    clockInitialMs: integer("clock_initial_ms").notNull(),
+    clockIncrementMs: integer("clock_increment_ms").notNull(),
+    rated: boolean("rated").notNull().default(false),
+    status: liveGameStatusEnum("status").notNull().default("active"),
+    /** Space-joined UCI moves — the canonical move record. */
+    movesUci: text("moves_uci").notNull().default(""),
+    fen: text("fen").notNull(),
+    turn: colorEnum("turn").notNull().default("white"),
+    /** Banked clock ms as of turnStartedAt (server-authoritative). */
+    clockWhiteMs: integer("clock_white_ms").notNull(),
+    clockBlackMs: integer("clock_black_ms").notNull(),
+    turnStartedAt: timestamp("turn_started_at", { withTimezone: true }),
+    /** Per-move %clk trail (mover's remaining AFTER each move), for the PGN. */
+    clockTrailJson: jsonb("clock_trail_json").$type<number[]>().notNull().default([]),
+    seq: integer("seq").notNull().default(0),
+    drawOfferBy: colorEnum("draw_offer_by"),
+    result: text("result"),
+    termination: text("termination"),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("live_games_white_idx").on(table.whiteUserId, table.status),
+    index("live_games_black_idx").on(table.blackUserId, table.status),
+    index("live_games_daily_idx")
+      .on(table.turnStartedAt)
+      .where(sql`${table.status} = 'active' and ${table.clockMode} = 'daily'`),
+  ]
+);
+
+/** Append-only event log per live game — what the polling/SSE clients read. */
+export const liveGameEvents = pgTable(
+  "live_game_events",
+  {
+    gameId: uuid("game_id")
+      .notNull()
+      .references(() => liveGames.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    /** 'move' | 'resign' | 'draw-offer' | 'draw-decline' | 'flag' | 'end' | 'abort' | 'blur' */
+    type: text("type").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.gameId, table.seq] })]
+);
+
+/**
+ * Matchmaking queue (§8): rating window widens with wait time; pairing MUST
+ * pass the Phase 1.5 canPair guard (blocks are real).
+ */
+export const matchmakingQueue = pgTable(
+  "matchmaking_queue",
+  {
+    userId: uuid("user_id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    variant: variantEnum("variant").notNull().default("standard"),
+    clockMode: text("clock_mode").notNull(),
+    clockInitialMs: integer("clock_initial_ms").notNull(),
+    clockIncrementMs: integer("clock_increment_ms").notNull(),
+    rated: boolean("rated").notNull().default(false),
+    bucket: timeControlBucketEnum("bucket").notNull(),
+    rating: doublePrecision("rating").notNull(),
+    enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("matchmaking_pool_idx").on(table.variant, table.clockMode, table.rated)]
+);
+
 // --- Openings (addendum A3.4) ---
 
 /**

@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/auto-import",
       "schedule": "43 5 * * 1"
+    },
+    {
+      "path": "/api/cron/daily-timeouts",
+      "schedule": "7 * * * *"
     }
   ]
 }

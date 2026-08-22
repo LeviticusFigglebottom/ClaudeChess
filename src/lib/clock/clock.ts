@@ -78,6 +78,20 @@ export function remainingMs(state: ClockState, color: "w" | "b", now: number): n
   return Math.max(0, banked - chargeableElapsed(state, now));
 }
 
+/**
+ * Signed remaining for a color at `now` — negative once past flagfall.
+ * The display clamp lives in remainingMs; this is the evidence value
+ * (Phase 4 gate: |remaining at verified claim| is the clock drift).
+ */
+export function remainingRawMs(state: ClockState, color: "w" | "b", now: number): number {
+  const banked = color === "w" ? state.whiteMs : state.blackMs;
+  if (state.config.mode === "none") return banked;
+  if (state.turn !== color || state.turnStartedAt === null || state.flagged) {
+    return banked;
+  }
+  return banked - chargeableElapsed(state, now);
+}
+
 /** True when the side to move has run out at `now`. */
 export function isFlagged(state: ClockState, now: number): boolean {
   if (state.config.mode === "none" || state.turnStartedAt === null) return false;
