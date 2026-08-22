@@ -91,6 +91,7 @@ export async function ensureUser(
     }
   }
 
+  let lastViolation: unknown = null;
   for (let attempt = 0; attempt < 6; attempt++) {
     const handle =
       attempt === 0 && desired
@@ -117,6 +118,7 @@ export async function ensureUser(
       return { user, created: true, converted: false, softDeleted: false };
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
+      lastViolation = error;
       // id collision → concurrent bootstrap won; handle collision → retry.
       const raced = await getUser(db, auth.id);
       if (raced) {
@@ -129,7 +131,20 @@ export async function ensureUser(
       }
     }
   }
-  throw new AccountError("handle_generation", "Could not allocate a unique handle.", 500);
+  // Six straight unique violations with no visible row is not a plausible
+  // handle-collision streak — surface the underlying error so a deployed
+  // misconfiguration (wrong constraint, wrong database, RLS surprise) is
+  // diagnosable from the response and the function log.
+  const detail =
+    lastViolation instanceof Error
+      ? `${lastViolation.message}${lastViolation.cause instanceof Error ? ` <- ${lastViolation.cause.message}` : ""}`
+      : String(lastViolation);
+  console.error("[ensureUser] handle allocation exhausted:", lastViolation);
+  throw new AccountError(
+    "handle_generation",
+    `Could not allocate a unique handle. last: ${detail}`.slice(0, 500),
+    500
+  );
 }
 
 export interface ProfilePatch {
