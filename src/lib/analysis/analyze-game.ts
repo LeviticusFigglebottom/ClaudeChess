@@ -42,6 +42,9 @@ export { VERIFY_RULES } from "./verify-rules";
 export interface AnalyzeChunkOpts {
   pool: AnalysisPool;
   tb: TablebaseClient;
+  /** When present, server-computed sweep searches join the GLOBAL eval
+   * cache (organic growth of the trusted tier). */
+  db?: Db;
   depth?: number;
   multipv?: number;
   /** Max engine positions this chunk may analyze (≥ 2 to complete a ply). */
@@ -164,7 +167,37 @@ async function evaluatePosition(
   const degradedInfo = degraded
     ? { reason: degraded.reason, reachedDepth: degraded.reachedDepth }
     : null;
-  return positionEvalFromInfos(fen, result.infos, tb, degradedInfo);
+  const evaluated = positionEvalFromInfos(fen, result.infos, tb, degradedInfo);
+  // Organic global-cache growth: this search ran on the SERVER, so it is
+  // trusted by construction. Opening zone only, sweep shapes only.
+  if (
+    opts.db &&
+    degradedInfo === null &&
+    multipv >= 3 &&
+    movesUci.length <= 40 &&
+    result.infos.length > 0
+  ) {
+    try {
+      const { epdOf, storeGlobalLines } = await import("./eval-cache");
+      await storeGlobalLines(opts.db, variant, [
+        {
+          epd: epdOf(fen),
+          depth,
+          multipv: result.infos.length,
+          lines: result.infos.map((info) => ({
+            multipv: info.multipv,
+            depth: info.depth,
+            scoreCp: info.scoreCp,
+            mateIn: info.mateIn,
+            pv: info.pv.slice(0, 32),
+          })),
+        },
+      ]);
+    } catch {
+      // Cache is an accelerator, never a requirement.
+    }
+  }
+  return evaluated;
 }
 
 /** Sum of capturable material on distinct target squares (§9.3 criterion c). */
@@ -264,6 +297,8 @@ export async function analyzeGameChunk(
   const startFen = game.startFen ?? rows[0]!.fenBefore;
   const variant = game.variant as VariantId;
   const movesUci = rows.map((row) => row.uci);
+  // Server sweep searches feed the trusted global cache.
+  opts = { ...opts, db };
   const deadline = opts.maxMs ? Date.now() + opts.maxMs : null;
   const maxPositions = Math.max(2, opts.maxPositions ?? Number.MAX_SAFE_INTEGER);
 

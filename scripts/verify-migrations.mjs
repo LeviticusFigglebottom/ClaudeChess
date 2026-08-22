@@ -58,14 +58,14 @@ const expectRejects = async (label, sql) => {
   console.log(`ok: ${label}`);
 };
 
-// All 27 tables present (17 through Phase 1.5; +linked_accounts/tb_cache/
+// All 28 tables present (17 through Phase 1.5; +linked_accounts/tb_cache/
 // explorer_cache in Phase 2/3; +live_games/live_game_events/matchmaking_queue
 // in Phase 4; +tempo_attempts/llm_cache in Phase 5).
-await expect("27 tables exist", async () => {
+await expect("28 tables exist", async () => {
   const result = await db.query(
     `select count(*)::int as n from information_schema.tables where table_schema = 'public'`
   );
-  if (result.rows[0].n !== 27) throw new Error(`expected 27 tables, found ${result.rows[0].n}`); // +explorer_agg (0015) +eval_cache (0017)
+  if (result.rows[0].n !== 28) throw new Error(`expected 28 tables, found ${result.rows[0].n}`); // +explorer_agg (0015) +eval_cache (0017)
 });
 
 // Anonymous-first: user row with no email.

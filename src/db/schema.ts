@@ -651,6 +651,32 @@ export const evalCache = pgTable(
   ]
 );
 
+/**
+ * GLOBAL eval cache — shared across every user, which is exactly why every
+ * row is SERVER-COMPUTED: the committed seed (built offline by
+ * scripts/build-eval-seed.mts over the explorer aggregate's most-reached
+ * opening positions) plus organic writes from the server's own sweep
+ * searches. Client-computed lines NEVER write here (they stay in the
+ * per-user eval_cache) — that is the entire trust model, not an
+ * optimization detail. Same EPD/repetition tradeoff as the per-user table.
+ */
+export const evalCacheGlobal = pgTable(
+  "eval_cache_global",
+  {
+    variant: text("variant").notNull(),
+    epd: text("epd").notNull(),
+    depth: integer("depth").notNull(),
+    multipv: integer("multipv").notNull(),
+    lines: jsonb("lines").$type<
+      { multipv: number; depth: number; scoreCp: number | null; mateIn: number | null; pv: string[] }[]
+    >().notNull(),
+    /** "seed" (committed offline build) or "server" (organic server search). */
+    source: text("source").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.variant, table.epd, table.depth, table.multipv] })]
+);
+
 // --- Account system (addendum A2.2) ---
 
 export const sessions = pgTable(

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { games, plies } from "@/db/schema";
+import { evalCacheGlobal, games, plies } from "@/db/schema";
 import { ensureUser, type AuthShape } from "@/lib/account";
 import { createTestDb, type TestDb } from "@/lib/account/test-db";
 import { GamePosition } from "@/lib/chess/position";
@@ -22,6 +22,7 @@ import { ingestPositionEvals, precacheFromEvalCache, type IngestPosition } from 
 let t: TestDb;
 let gameId: string;
 let userId: string;
+let thirdGamePlies: (typeof plies.$inferInsert)[] = [];
 
 // 1.a3 a6 2.h3 h6 — no tactics, evals fully controlled by the test.
 const MOVES = ["a2a3", "a7a6", "h2h3", "h7h6"];
@@ -246,6 +247,7 @@ describe("client-batch ingest", () => {
 
     const result = await precacheFromEvalCache(t.db, secondGameId, userId, tb(), 18);
     expect(result.covered).toBe(4);
+    thirdGamePlies = plyRows;
     const rows = await t.db
       .select()
       .from(plies)
@@ -257,5 +259,55 @@ describe("client-batch ingest", () => {
     await expect(
       precacheFromEvalCache(t.db, secondGameId, randomUUID(), tb(), 18)
     ).rejects.toThrow("game_missing");
+  });
+
+  it("the GLOBAL tier serves a brand-new user with zero per-user history", async () => {
+    // Fresh user, same moves — per-user cache empty; promote the shared
+    // prefix into eval_cache_global (server-computed tier) and precache
+    // must cover the game entirely from it.
+    const auth: AuthShape = {
+      id: randomUUID(),
+      isAnonymous: false,
+      email: `${randomUUID()}@example.com`,
+      emailConfirmedAt: new Date().toISOString(),
+    };
+    const freshUser = (await ensureUser(t.db, auth)).user.id;
+    // Copy the (server-trusted in production; test-synthesized here) lines
+    // from the first user's cache into the global tier.
+    const { evalCache } = await import("@/db/schema");
+    const ownRows = await t.db
+      .select()
+      .from(evalCache)
+      .where(eq(evalCache.depth, 18));
+    await t.db.insert(evalCacheGlobal).values(
+      ownRows.map((row) => ({
+        variant: row.variant,
+        epd: row.epd,
+        depth: row.depth,
+        multipv: row.multipv,
+        lines: row.lines,
+        source: "seed",
+      }))
+    );
+    const inserted = await t.db
+      .insert(games)
+      .values({
+        userId: freshUser,
+        variant: "chess960",
+        startFen: null,
+        source: "local",
+        pgn: "",
+        whiteName: "w",
+        blackName: "b",
+        userColor: "white",
+        result: "1-0",
+        playedAt: new Date(),
+        importedAt: new Date(),
+      })
+      .returning();
+    const freshGameId = inserted[0]!.id;
+    await t.db.insert(plies).values(thirdGamePlies.map((row) => ({ ...row, gameId: freshGameId })));
+    const result = await precacheFromEvalCache(t.db, freshGameId, freshUser, tb(), 18);
+    expect(result.covered).toBe(4);
   });
 });

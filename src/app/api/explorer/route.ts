@@ -39,8 +39,20 @@ export async function GET(request: Request) {
         speeds,
         ratings: ratingBands,
       });
-      return NextResponse.json({ ...position, cached });
+      return NextResponse.json({ ...position, cached, source: "lichess" });
     } catch (error) {
+      // Live explorer unreachable (datacenter egress is provider-blocked on
+      // this deployment): serve the SELF-HOSTED aggregate — real games from
+      // the committed monthly sample — labeled as such, never cached as if
+      // it were the live upstream.
+      const { fetchAggregatePosition } = await import("@/lib/explorer/local");
+      const aggregate = await fetchAggregatePosition(getDb(), fen, {
+        speeds,
+        ratings: ratingBands,
+      }).catch(() => null);
+      if (aggregate) {
+        return NextResponse.json({ ...aggregate, cached: false, source: "aggregate" });
+      }
       throw new AccountError(
         "explorer_upstream",
         error instanceof Error ? error.message : "Explorer upstream failed.",

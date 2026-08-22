@@ -11,7 +11,7 @@ const FEATURES = [
   {
     href: "/puzzles",
     title: "Puzzles",
-    body: "Tactics generated from real games and rated against your solving history.",
+    body: "Rated tactics — plus unrated drills built from your own analyzed blunders.",
   },
   {
     href: "/games",
