@@ -34,4 +34,5 @@ const run = (label, cmd, args) => {
 run("drizzle-kit migrate (journal order)", "npx", ["drizzle-kit", "migrate"]);
 run("openings seed (idempotent upsert)", "node", ["scripts/seed-openings.mjs"]);
 run("explorer aggregate seed (idempotent upsert)", "node", ["scripts/seed-explorer-agg.mjs"]);
+run("global eval-cache seed (idempotent upsert)", "node", ["scripts/seed-eval-cache.mjs"]);
 console.log("migrate-deploy: done");

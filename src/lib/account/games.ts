@@ -338,6 +338,9 @@ export async function listGames(
       playedAt: games.playedAt,
       plyCount: sql<number>`(select count(*)::int from plies p where p.game_id = games.id)`,
       analyzedCount: sql<number>`(select count(*)::int from plies p where p.game_id = games.id and p.wp_before is not null)`,
+      /** Full-depth review complete for the ply (progressive: provisional
+       * d12 rows don't count; degraded rows are terminal and do). */
+      reviewedCount: sql<number>`(select count(*)::int from plies p where p.game_id = games.id and (p.degraded or coalesce(p.analyzed_at_depth, 0) >= 18))`,
       errorCount: sql<number>`(select count(*)::int from plies p where p.game_id = games.id and p.classification in ('MISTAKE','BLUNDER','MISS') and p.color = games.user_color)`,
     })
     .from(games)

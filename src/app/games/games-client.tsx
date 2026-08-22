@@ -32,6 +32,7 @@ interface GameRowPayload {
   playedAt: string | null;
   plyCount: number;
   analyzedCount: number;
+  reviewedCount: number;
   errorCount: number;
 }
 
@@ -88,7 +89,7 @@ export function GamesClient() {
   // (the library analyzes itself while the tab is open). Games that are
   // eval-complete but still provisional finish when opened (auto-resume).
   const unanalyzed = (games ?? []).filter(
-    (game) => !game.isStudy && game.plyCount > 0 && game.analyzedCount < game.plyCount
+    (game) => !game.isStudy && game.plyCount > 0 && game.reviewedCount < game.plyCount
   );
   const analyzeAll = useCallback(async () => {
     batchAbortRef.current = false;
@@ -208,7 +209,7 @@ function GameRow({ game }: { game: GameRowPayload }) {
     (game.result === "1-0" && game.userColor === "white") ||
     (game.result === "0-1" && game.userColor === "black");
   const drew = game.result === "1/2-1/2";
-  const analyzed = game.plyCount > 0 && game.analyzedCount === game.plyCount;
+  const analyzed = game.plyCount > 0 && game.reviewedCount === game.plyCount;
   return (
     <li className="border-b border-edge last:border-0">
       <Link

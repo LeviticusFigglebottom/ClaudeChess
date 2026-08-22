@@ -20,6 +20,8 @@ interface ExplorerMove {
 }
 
 interface ExplorerPayload {
+  /** "lichess" (live) or "aggregate" (the committed monthly sample). */
+  source?: string;
   white: number;
   draws: number;
   black: number;
@@ -77,7 +79,17 @@ export function ExplorerPanel({
   return (
     <div className="rounded-xl border border-edge bg-surface-2 p-3">
       <div className="mb-1.5 flex items-baseline justify-between">
-        <span className="text-xs uppercase tracking-wide text-text-faint">Explorer</span>
+        <span className="text-xs uppercase tracking-wide text-text-faint">
+          Explorer
+          {data?.source === "aggregate" && (
+            <span
+              className="ml-1.5 normal-case tracking-normal"
+              title="Live explorer unreachable from this deployment — showing the self-hosted sample built from a recent Lichess month."
+            >
+              · self-hosted sample
+            </span>
+          )}
+        </span>
         {data?.opening && (
           <span className="truncate text-xs text-text-faint">
             {data.opening.eco} {data.opening.name}
