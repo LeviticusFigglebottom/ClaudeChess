@@ -12,6 +12,13 @@ import {
   writePlyRecord,
   type PositionEval,
 } from "./analyze-game";
+import {
+  CACHE_MAX_POSITION,
+  epdOf,
+  lookupCachedLines,
+  storeCachedLines,
+  type CachedPosition,
+} from "./eval-cache";
 import type { TablebaseClient } from "./tablebase";
 import { needsVerify, VERIFY_RULES } from "./verify-rules";
 
@@ -115,6 +122,67 @@ function sanitizeLines(fen: string, variant: VariantId, raw: IngestLine[]): Engi
   return [...byMultipv.values()].sort((a, b) => a.multipv - b.multipv);
 }
 
+/**
+ * Serve a game's opening zone straight from the user's eval cache BEFORE
+ * any engine runs: cached positions are synthesized into the normal ingest
+ * contract and written through the exact same machinery (guards included).
+ * Terminal positions are free. Returns how many plies the cache covered —
+ * the client's sweep then starts past them.
+ */
+export async function precacheFromEvalCache(
+  db: Db,
+  gameId: string,
+  userId: string,
+  tb: TablebaseClient,
+  depth: number
+): Promise<IngestResult & { covered: number }> {
+  const game = (await db.select().from(games).where(eq(games.id, gameId)))[0];
+  if (!game || game.userId !== userId) throw new Error("game_missing");
+  const rows = await db
+    .select({ ply: plies.ply, fenBefore: plies.fenBefore, fenAfter: plies.fenAfter })
+    .from(plies)
+    .where(eq(plies.gameId, gameId))
+    .orderBy(asc(plies.ply));
+  const variant = game.variant as VariantId;
+  const last = Math.min(rows.length, CACHE_MAX_POSITION);
+  const fens: string[] = [];
+  for (let index = 0; index <= last; index++) {
+    fens.push(index === 0 ? rows[0]!.fenBefore : rows[index - 1]!.fenAfter);
+  }
+  const hits = await lookupCachedLines(
+    db,
+    userId,
+    variant,
+    fens.map(epdOf),
+    depth,
+    ANALYSIS_SETTINGS.review.multipv
+  );
+  const synthesized: IngestPosition[] = [];
+  for (const [index, fen] of fens.entries()) {
+    if (terminalEval(fen, variant)) {
+      synthesized.push({ index, depth, lines: [] });
+      continue;
+    }
+    const hit = hits.get(epdOf(fen));
+    // Deep (verify-tier) cache rows serve sweeps as review-depth — declaring
+    // 24 would route virgin rows into verify semantics; capping at 18 is
+    // honestly conservative (the lines are deeper than the label).
+    if (hit) {
+      synthesized.push({
+        index,
+        depth: Math.min(hit.depth, ANALYSIS_SETTINGS.review.depth),
+        lines: hit.lines,
+      });
+    }
+  }
+  if (synthesized.length < 2) {
+    const empty = await ingestPositionEvals(db, gameId, userId, tb, []);
+    return { ...empty, covered: 0 };
+  }
+  const result = await ingestPositionEvals(db, gameId, userId, tb, synthesized);
+  return { ...result, covered: result.written };
+}
+
 export async function ingestPositionEvals(
   db: Db,
   gameId: string,
@@ -139,6 +207,7 @@ export async function ingestPositionEvals(
 
   // Resolve payload positions → PositionEval keyed by index.
   const evals = new Map<number, { pe: PositionEval; depth: number; lineDepth: number }>();
+  const cacheWrites: CachedPosition[] = [];
   const sorted = [...positions].sort((a, b) => a.index - b.index);
   for (const position of sorted) {
     if (
@@ -173,7 +242,25 @@ export async function ingestPositionEvals(
       depth: position.depth,
       lineDepth: infos[0]!.depth,
     });
+    // Opening-zone write-through: the user's own library repeats these
+    // positions constantly. Keyed at the declared tier depth; re-writes of
+    // an existing key are free no-ops.
+    if (position.index <= CACHE_MAX_POSITION) {
+      cacheWrites.push({
+        epd: epdOf(fen),
+        depth: position.depth,
+        multipv: infos.length,
+        lines: infos.map((info) => ({
+          multipv: info.multipv,
+          depth: info.depth,
+          scoreCp: info.scoreCp,
+          mateIn: info.mateIn,
+          pv: info.pv.slice(0, 32),
+        })),
+      });
+    }
   }
+  await storeCachedLines(db, userId, variant, cacheWrites);
 
   // Write every adjacent pair present in this request.
   for (const [index, after] of [...evals.entries()].sort((a, b) => a[0] - b[0])) {

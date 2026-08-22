@@ -1,5 +1,7 @@
 "use client";
 
+import type { PieceSetId } from "@/lib/prefs/prefs";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GamePosition } from "@/lib/chess";
 import { GameTree, type TreeNode } from "@/lib/chess/tree";
@@ -530,7 +532,7 @@ function VariationLine({
   onSelect: (id: number) => void;
   badges: Map<number, Classification | null>;
   figurine: boolean;
-  pieceSet: "classic" | "cburnett";
+  pieceSet: PieceSetId;
   depth: number;
 }) {
   const elements: React.ReactNode[] = [];
@@ -593,7 +595,7 @@ function MoveButton({
   onSelect: (id: number) => void;
   badge: Classification | null;
   figurine: boolean;
-  pieceSet: "classic" | "cburnett";
+  pieceSet: PieceSetId;
   showNumber: boolean;
 }) {
   return (

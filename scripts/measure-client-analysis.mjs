@@ -23,6 +23,7 @@ const flag = (name, fallback) => {
 const HANDLE = flag("--handle", "Chess-Network");
 const TARGET = Number(flag("--target-plies", "80"));
 const CAP_MS = Number(flag("--cap-min", "20")) * 60_000;
+const FIXED_USER = flag("--user", "");
 
 const launchOpts = { executablePath: process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium" };
 if (process.env.HTTPS_PROXY && !BASE.includes("localhost")) {
@@ -35,7 +36,7 @@ try {
   const ctx = await browser.newContext();
   if (BASE.includes("localhost")) {
     await ctx.addCookies([
-      { name: "gambit-dev-user", value: randomUUID(), url: BASE },
+      { name: "gambit-dev-user", value: FIXED_USER || randomUUID(), url: BASE },
     ]);
   }
   const page = await ctx.newPage();
@@ -121,7 +122,7 @@ try {
       `import chunk ${chunk + 1}: ${run.status} imported=${run.body?.result?.imported ?? "?"}`
     );
     const games = await api("/api/games?limit=100");
-    const list = (games.body?.games ?? []).filter((g) => g.variant === "standard" && g.plyCount >= TARGET * 0.8);
+    const list = (games.body?.games ?? []).filter((g) => g.variant === "standard" && g.plyCount >= TARGET * 0.8 && g.analyzedCount === 0);
     list.sort((a, b) => Math.abs(a.plyCount - TARGET) - Math.abs(b.plyCount - TARGET));
     target = list[0] ?? null;
   }

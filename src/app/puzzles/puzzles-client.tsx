@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-context";
 import { GameBoard } from "@/components/game-board";
@@ -20,7 +21,11 @@ interface PuzzlePayload {
   movesUci: string[];
   rating: number;
   themes: string[];
+  /** Own-game drills only: where this blunder actually happened. */
+  source?: { gameId: string; ply: number; opponent: string; playedAt: string | null };
 }
+
+type PuzzleMode = "rated" | "own";
 
 interface RatingPayload {
   rating: number;
@@ -40,6 +45,10 @@ export function PuzzlesClient() {
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
   const [delta, setDelta] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<PuzzleMode>("rated");
+  const modeRef = useRef<PuzzleMode>("rated");
+  const ownQueueRef = useRef<PuzzlePayload[] | null>(null);
+  const ownIndexRef = useRef(0);
   const positionRef = useRef<GamePosition | null>(null);
   const solutionIndexRef = useRef(0);
   const startedAtRef = useRef(0);
@@ -63,6 +72,65 @@ export function PuzzlesClient() {
     setError(null);
     attemptedRef.current = false;
     try {
+      if (modeRef.current === "own") {
+        if (ownQueueRef.current === null) {
+          const response = await fetch("/api/puzzles/own");
+          const body = (await response.json()) as {
+            puzzles?: {
+              id: string;
+              fen: string;
+              movesUci: string[];
+              theme: string | null;
+              source: PuzzlePayload["source"];
+            }[];
+            error?: { message: string };
+          };
+          if (!response.ok) throw new Error(body.error?.message ?? "load failed");
+          ownQueueRef.current = (body.puzzles ?? []).map((entry) => ({
+            id: entry.id,
+            fen: entry.fen,
+            movesUci: entry.movesUci,
+            rating: 0,
+            themes: entry.theme ? [entry.theme] : [],
+            source: entry.source,
+          }));
+          ownIndexRef.current = 0;
+        }
+        const queue = ownQueueRef.current;
+        if (queue.length === 0) {
+          setPhase("loading");
+          setError(
+            "No blunders to drill yet — import and analyze a few games, then your own mistakes become puzzles."
+          );
+          return;
+        }
+        const own = queue[ownIndexRef.current % queue.length]!;
+        ownIndexRef.current++;
+        setPuzzle(own);
+        const position = GamePosition.fromFen(own.fen, "standard");
+        positionRef.current = position;
+        solutionIndexRef.current = 0;
+        setFen(position.fen());
+        setLastMove(null);
+        setPhase("presenting");
+        setTimeout(() => {
+          const setup = position.moveUci(own.movesUci[0]!);
+          if (setup) {
+            setFen(position.fen());
+            setLastMove({ from: setup.from, to: setup.to });
+            play(setup.san.includes("x") ? "capture" : "move");
+            solutionIndexRef.current = 1;
+            startedAtRef.current = Date.now();
+            setPhase("solving");
+            announce(
+              `The blunder ${setup.san} just happened — punish it. ${
+                position.turn === "w" ? "White" : "Black"
+              } to move.`
+            );
+          }
+        }, 600);
+        return;
+      }
       // §9.2 drill deck entry: /puzzles?themes=a,b narrows the pool to the
       // fingerprint's motif themes (B1.2).
       const themes =
@@ -116,6 +184,8 @@ export function PuzzlesClient() {
     async (solved: boolean) => {
       if (attemptedRef.current || !puzzle) return;
       attemptedRef.current = true;
+      // Own-game drills are unrated by design — nothing is booked.
+      if (puzzle.id.startsWith("own:")) return;
       try {
         const response = await fetch("/api/puzzles/attempt", {
           method: "POST",
@@ -247,6 +317,33 @@ export function PuzzlesClient() {
   return (
     <Shell rating={rating}>
       <div ref={liveRef} className="sr-only" role="status" aria-live="polite" />
+      <div className="mb-4 flex gap-2">
+        {(
+          [
+            ["rated", "Rated"],
+            ["own", "From my games"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => {
+              if (mode === value) return;
+              setMode(value);
+              modeRef.current = value;
+              setError(null);
+              void loadNext();
+            }}
+            aria-pressed={mode === value}
+            className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+              mode === value
+                ? "border-accent bg-surface-3 text-text"
+                : "border-edge text-text-dim hover:border-edge-strong hover:bg-surface-2 hover:text-text"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {error && <p className="mb-3 text-sm text-warn-1">{error}</p>}
       <div className="flex flex-col gap-5 lg:flex-row">
         <div className="w-full max-w-[560px]">
@@ -274,7 +371,9 @@ export function PuzzlesClient() {
                   {position.turn === "w" ? "White" : "Black"} to move
                 </p>
                 <p className="mt-1 text-xs text-text-faint">
-                  Find the best line — every move counts.
+                  {puzzle.source
+                    ? "This blunder is from one of your games — find the punishment you (or they) missed."
+                    : "Find the best line — every move counts."}
                 </p>
               </>
             )}
@@ -315,16 +414,30 @@ export function PuzzlesClient() {
             )}
             {(phase === "solved" || phase === "failed") && (
               <div className="mt-3 border-t border-edge pt-3">
-                {puzzle && (
+                {puzzle && puzzle.source ? (
+                  <p className="mb-2 text-xs text-text-faint">
+                    {puzzle.themes[0] && (
+                      <span className="notation">{puzzle.themes[0].toLowerCase().replaceAll("_", " ")} · </span>
+                    )}
+                    from your game vs {puzzle.source.opponent}
+                    {puzzle.source.playedAt
+                      ? ` (${new Date(puzzle.source.playedAt).toLocaleDateString()})`
+                      : ""}{" "}
+                    ·{" "}
+                    <Link
+                      href={`/analysis/${puzzle.source.gameId}`}
+                      className="text-text-dim underline underline-offset-2 hover:text-text"
+                    >
+                      open the review
+                    </Link>
+                  </p>
+                ) : puzzle ? (
                   <p className="mb-2 text-xs text-text-faint">
                     puzzle <span className="notation">{puzzle.rating}</span> ·{" "}
                     {puzzle.themes.slice(0, 4).join(", ")}
                   </p>
-                )}
-                <button
-                  onClick={() => void loadNext()}
-                  className="rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90"
-                >
+                ) : null}
+                <button onClick={() => void loadNext()} className="btn-primary px-4 py-1.5 text-sm">
                   Next puzzle
                 </button>
               </div>

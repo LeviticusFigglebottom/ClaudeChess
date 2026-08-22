@@ -1,5 +1,7 @@
 "use client";
 
+import type { PieceSetId } from "@/lib/prefs/prefs";
+
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-context";
@@ -304,7 +306,13 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   if (!data) {
     return (
       <Shell>
-        <p className="text-sm text-text-faint">Loading…</p>
+        <div className="flex flex-col gap-4 lg:flex-row">
+          <div className="skeleton aspect-square w-full max-w-[560px]" />
+          <div className="min-w-0 flex-1 space-y-3">
+            <div className="skeleton h-64 w-full" />
+            <div className="skeleton h-24 w-full" />
+          </div>
+        </div>
       </Shell>
     );
   }
@@ -572,7 +580,7 @@ function MoveList({
   cursor: number;
   onSelect: (cursor: number) => void;
   figurine: boolean;
-  pieceSet: "classic" | "cburnett";
+  pieceSet: PieceSetId;
 }) {
   const byNumber = new Map<number, { white?: PlyPayload; black?: PlyPayload }>();
   for (const ply of plies) {

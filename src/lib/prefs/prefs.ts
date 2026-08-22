@@ -12,7 +12,7 @@ export type BoardThemeId =
   | "ice"
   | "amethyst"
   | "high-contrast";
-export type PieceSetId = "classic" | "cburnett";
+export type PieceSetId = "classic" | "cburnett" | "merida" | "chessnut" | "fantasy";
 export type AnimationPref = "instant" | "fast" | "normal" | "slow";
 
 export const SOUND_EVENTS = [

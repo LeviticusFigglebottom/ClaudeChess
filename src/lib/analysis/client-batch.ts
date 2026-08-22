@@ -331,6 +331,30 @@ export async function runClientBatchAnalysis(
       ["pass1", ANALYSIS_SETTINGS.provisional.depth],
       ["pass2", ANALYSIS_SETTINGS.review.depth],
     ] as const) {
+      // Eval cache first: the opening zone of the user's own library is
+      // usually already evaluated — those plies get written server-side
+      // with ZERO engine work here, and the sweep starts past them.
+      try {
+        const precache = await fetch("/api/analyze/ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gameId, precache: { depth } }),
+        });
+        const body = (await precache.json().catch(() => null)) as {
+          covered?: number;
+          verifyReadyPlies?: number[];
+        } | null;
+        if (precache.ok && body) {
+          if ((body.covered ?? 0) > 0) {
+            console.info(`[batch] cache covered ${body.covered} plies at d${depth}`);
+            payload = await fetchRows(gameId);
+            rows.splice(0, rows.length, ...payload.plies);
+          }
+          enqueueCandidates(body as IngestReply);
+        }
+      } catch {
+        // Cache is an accelerator, never a requirement.
+      }
       const targets = rows.filter((row) => needsPass(row, depth));
       if (targets.length === 0) continue;
       const firstPosition = Math.max(0, targets[0]!.ply - 1);
