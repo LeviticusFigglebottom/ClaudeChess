@@ -25,7 +25,15 @@ Environment variables (Production + Preview):
 | `NEXT_PUBLIC_FF_*` | omit (default off) | trainers/variants stay flag-gated per §9; per-user labs overrides can still enable them |
 | `GAMBIT_DEV_AUTH` / `NEXT_PUBLIC_GAMBIT_DEV_AUTH` | **never set** | dev-auth harness is a gate-infrastructure identity bypass |
 
-One-time against the production `DATABASE_URL`:
+Migrations + openings seed run **as a Vercel build step** (`scripts/migrate-deploy.mjs`,
+prepended to `npm run build`; no-op outside Vercel). Rationale: the remote dev
+container's egress is HTTPS-only — the postgres wire protocol cannot leave it on any
+port (5432/6543 blocked, the pooler's 443 listener is Supavisor's HTTP server) — so
+the build environment, which holds `DATABASE_URL` and has open egress, is where the
+journal chain applies. Idempotent on every build; a migration failure fails the
+build. Caveat: preview builds sharing the production `DATABASE_URL` also migrate —
+fine while one branch deploys; revisit if previews ever carry divergent schema.
+Manual equivalent (from any machine with postgres egress):
 
 ```bash
 npx drizzle-kit migrate        # 0000–0012 (npm run db:verify proves the chain on empty PG)
