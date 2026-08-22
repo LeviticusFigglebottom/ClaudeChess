@@ -177,38 +177,51 @@ try {
   await pageA.fill('input[type="email"]', email);
   await pageA.fill('input[type="password"]', password);
   await pageA.click('form button[type="submit"]');
-  const pendingSeen = await pageA
-    .waitForSelector("text=Confirmation email sent", { timeout: 20000 })
-    .then(() => true)
-    .catch(() => false);
-  check("conversion submits; pending-confirmation state shown", pendingSeen, email);
+  // The service decides the confirmation contract: with email-change
+  // confirmation required the dialog shows the pending state; with instant
+  // confirm the dialog closes and the session is already converted.
+  const outcome = await Promise.race([
+    pageA
+      .waitForSelector("text=Confirmation email sent", { timeout: 20000 })
+      .then(() => "pending")
+      .catch(() => "timeout"),
+    pageA
+      .waitForSelector('[role="dialog"]', { state: "detached", timeout: 20000 })
+      .then(() => "closed")
+      .catch(() => "timeout"),
+  ]);
+  check(
+    "conversion submits (pending state or instant confirm)",
+    outcome === "pending" || outcome === "closed",
+    `outcome=${outcome} email=${email}`
+  );
 
   // ---- Confirmation leg -------------------------------------------------
-  // Preferred: mint the confirmation link via the admin API (exactly what
-  // the email would carry) and open it in A's browser.
-  let confirmationLeg = "none";
-  const linkTry = await admin("/admin/generate_link", "POST", {
-    type: "email_change_new",
-    email: email,
-    new_email: email,
-  });
-  let actionLink = linkTry.body?.action_link ?? linkTry.body?.properties?.action_link;
-  if (actionLink) {
-    confirmationLeg = "generate_link (verify endpoint)";
-    await pageA.goto(actionLink, { waitUntil: "domcontentloaded" });
-    await pageA.waitForTimeout(3000);
-    await pageA.goto(BASE, { waitUntil: "domcontentloaded" });
-  } else {
-    // Fallback: admin-confirm the email on the same auth user, then let the
-    // client pick the change up (server-side getUser() sees fresh state).
-    const upd = await admin(`/admin/users/${meA1.user.id}`, "PUT", {
-      email,
-      email_confirm: true,
+  let confirmationLeg = "instant confirm (service converts without a link)";
+  if (outcome !== "closed") {
+    // Confirmation required: mint the link via the admin API (exactly what
+    // the email would carry) and open it; fall back to admin-confirm.
+    const linkTry = await admin("/admin/generate_link", "POST", {
+      type: "email_change_new",
+      email: email,
+      new_email: email,
     });
-    confirmationLeg = `admin email_confirm (status ${upd.status})`;
-    await pageA.goto(BASE, { waitUntil: "domcontentloaded" });
+    const actionLink = linkTry.body?.action_link ?? linkTry.body?.properties?.action_link;
+    if (actionLink) {
+      confirmationLeg = "generate_link (verify endpoint)";
+      await pageA.goto(actionLink, { waitUntil: "domcontentloaded" });
+      await pageA.waitForTimeout(3000);
+      await pageA.goto(BASE, { waitUntil: "domcontentloaded" });
+    } else {
+      const upd = await admin(`/admin/users/${meA1.user.id}`, "PUT", {
+        email,
+        email_confirm: true,
+      });
+      confirmationLeg = `admin email_confirm (status ${upd.status}; generate_link ${linkTry.status})`;
+      await pageA.goto(BASE, { waitUntil: "domcontentloaded" });
+    }
   }
-  console.log(`confirmation leg: ${confirmationLeg} (generate_link status ${linkTry.status})`);
+  console.log(`confirmation leg: ${confirmationLeg}`);
 
   // ---- Post-conversion verification ------------------------------------
   let meA2 = null;

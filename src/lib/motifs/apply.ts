@@ -101,6 +101,16 @@ export async function detectAndStoreMotifs(
       }
     }
 
+    // Forgone gate (Task 3): best-play eval of the pre-move position in the
+    // MOVER's POV (DB stores White-POV; mate outranks cp).
+    let bestEvalCp: number | null = null;
+    if (row.mateBefore !== null && row.mateBefore !== undefined) {
+      const moverMates = row.color === "white" ? row.mateBefore > 0 : row.mateBefore < 0;
+      bestEvalCp = moverMates ? 10_000 : -10_000;
+    } else if (row.evalBeforeCp !== null && row.evalBeforeCp !== undefined) {
+      bestEvalCp = row.color === "white" ? row.evalBeforeCp : -row.evalBeforeCp;
+    }
+
     const input: MotifDetectionInput = {
       variant: game.variant,
       fenBefore: row.fenBefore,
@@ -109,6 +119,8 @@ export async function detectAndStoreMotifs(
       movedSan: row.san,
       bestPv: (row.pv1 as string[] | null) ?? [],
       refutationPv,
+      classification: row.classification,
+      bestEvalCp,
       wpLoss: row.wpLoss ?? 0,
       clockMsRemaining: row.clockMsRemaining,
       tbBefore: null,

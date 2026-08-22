@@ -4981,7 +4981,7 @@
  },
  {
   "id": "zwischenzug-1",
-  "motif": "ZWISCHENZUG_MISSED",
+  "motif": "MISSED_ZWISCHENZUG",
   "source": "handcrafted",
   "themes": [],
   "input": {
@@ -5005,12 +5005,14 @@
    "fenAfter": "rnbqkb1r/ppp2ppp/8/3p4/3P4/8/PPP1PPPP/R1BQKBNR w KQkq - 0 5",
    "movedUci": "e6d5",
    "movedSan": "exd5",
-   "playedIsRecapture": true
-  }
+   "playedIsRecapture": true,
+   "bestEvalCp": 400
+  },
+  "note": " [Task 3: forgone class — bestPv holds the zwischenzug]"
  },
  {
   "id": "zwischenzug-2",
-  "motif": "ZWISCHENZUG_MISSED",
+  "motif": "MISSED_ZWISCHENZUG",
   "source": "handcrafted",
   "themes": [],
   "input": {
@@ -5034,8 +5036,10 @@
    "fenAfter": "r2qkbnr/pp2pppp/2n5/4P3/3P4/8/PPP2PPP/RNBQK1NR w KQkq - 1 6",
    "movedUci": "b8c6",
    "movedSan": "Nxc6",
-   "playedIsRecapture": true
-  }
+   "playedIsRecapture": true,
+   "bestEvalCp": 400
+  },
+  "note": " [Task 3: forgone class — bestPv holds the zwischenzug]"
  },
  {
   "id": "premature-1",
@@ -5269,10 +5273,10 @@
  },
  {
   "id": "back_rank-11",
-  "motif": "BACK_RANK",
+  "motif": "MISSED_BACK_RANK",
   "source": "gate-phase2 UNCLEAR review (real imported game)",
   "themes": [],
-  "note": "Missed back-rank mate: Rd1# was on; Nf4 lets White breathe.",
+  "note": "Missed back-rank mate: Rd1# was on; Nf4 lets White breathe. [Task 3: forgone class — missed Rd1#]",
   "input": {
    "variant": "standard",
    "fenBefore": "6k1/2pr3p/6p1/1P2p2n/2R5/8/5PPP/6K1 b - - 0 29",
@@ -5294,7 +5298,8 @@
    "tbBeforeHit": false,
    "tbAfter": null,
    "priorForcingRun": false,
-   "recentOwnSans": []
+   "recentOwnSans": [],
+   "bestEvalCp": 10000
   }
  },
  {
@@ -5908,6 +5913,551 @@
    "tbAfter": null,
    "priorForcingRun": false,
    "recentOwnSans": []
+  }
+ },
+ {
+  "id": "missed_fork-1",
+  "motif": "MISSED_FORK",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Nc7+ forks king and rook; the quiet king move lets the knight moment pass.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "r3k3/p6p/8/3N4/8/8/P6P/6K1 w - - 4 30",
+   "fenAfter": "r3k3/p6p/8/3N4/8/8/P6P/5K2 b - - 5 30",
+   "movedUci": "g1f1",
+   "movedSan": "Kf1",
+   "bestPv": [
+    "d5c7",
+    "e8d7",
+    "c7a8"
+   ],
+   "refutationPv": [
+    "e8d7",
+    "f1g1"
+   ],
+   "wpLoss": 14,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 500
+  }
+ },
+ {
+  "id": "missed_fork-2",
+  "motif": "MISSED_FORK",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Black-side mirror: Nc7+ forks king and rook; the quiet king move lets the knight moment pass.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "6k1/p6p/8/8/3n4/8/P6P/R3K3 b - - 4 30",
+   "fenAfter": "5k2/p6p/8/8/3n4/8/P6P/R3K3 w - - 5 31",
+   "movedUci": "g8f8",
+   "movedSan": "Kf8",
+   "bestPv": [
+    "d4c2",
+    "e1d2",
+    "c2a1"
+   ],
+   "refutationPv": [
+    "e1d2",
+    "f8g8"
+   ],
+   "wpLoss": 14,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 500
+  }
+ },
+ {
+  "id": "missed_pin-1",
+  "motif": "MISSED_PIN",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Bb5 absolutely pins the c6 knight to the king; the king shuffle forgoes it.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "4k3/pp5p/2n5/8/8/8/P6P/5BK1 w - - 3 25",
+   "fenAfter": "4k3/pp5p/2n5/8/8/8/P5KP/5B2 b - - 4 25",
+   "movedUci": "g1g2",
+   "movedSan": "Kg2",
+   "bestPv": [
+    "f1b5",
+    "a7a6",
+    "b5c6",
+    "b7c6"
+   ],
+   "refutationPv": [
+    "e8d7",
+    "g2g1"
+   ],
+   "wpLoss": 12,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 320
+  }
+ },
+ {
+  "id": "missed_pin-2",
+  "motif": "MISSED_PIN",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Black-side mirror: Bb5 absolutely pins the c6 knight to the king; the king shuffle forgoes it.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "5bk1/p6p/8/8/8/2N5/PP5P/4K3 b - - 3 25",
+   "fenAfter": "5b2/p5kp/8/8/8/2N5/PP5P/4K3 w - - 4 26",
+   "movedUci": "g8g7",
+   "movedSan": "Kg7",
+   "bestPv": [
+    "f8b4",
+    "a2a3",
+    "b4c3",
+    "b2c3"
+   ],
+   "refutationPv": [
+    "e1d2",
+    "g7g8"
+   ],
+   "wpLoss": 12,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 320
+  }
+ },
+ {
+  "id": "missed_skewer-1",
+  "motif": "MISSED_SKEWER",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Bg2+ skewers the centralized king against the a8 queen.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "q7/p6p/8/3k4/8/8/P6P/5BK1 w - - 6 40",
+   "fenAfter": "q7/p6p/8/3k4/8/8/P4K1P/5B2 b - - 7 40",
+   "movedUci": "g1f2",
+   "movedSan": "Kf2",
+   "bestPv": [
+    "f1g2",
+    "d5d6",
+    "g2a8"
+   ],
+   "refutationPv": [
+    "d5e5",
+    "f2g1"
+   ],
+   "wpLoss": 20,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 900
+  }
+ },
+ {
+  "id": "missed_skewer-2",
+  "motif": "MISSED_SKEWER",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Black-side mirror: Bg2+ skewers the centralized king against the a8 queen.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "5bk1/p6p/8/8/3K4/8/P6P/Q7 b - - 6 40",
+   "fenAfter": "5b2/p4k1p/8/8/3K4/8/P6P/Q7 w - - 7 41",
+   "movedUci": "g8f7",
+   "movedSan": "Kf7",
+   "bestPv": [
+    "f8g7",
+    "d4d3",
+    "g7a1"
+   ],
+   "refutationPv": [
+    "d4e4",
+    "f7g8"
+   ],
+   "wpLoss": 20,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 900
+  }
+ },
+ {
+  "id": "missed_discovered-1",
+  "motif": "MISSED_DISCOVERED_ATTACK",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Nc5 discovers Re1 onto the e7 queen (pinned to the king behind it).",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "4k3/p3q2p/8/8/4N3/8/P6P/4R1K1 w - - 5 28",
+   "fenAfter": "4k3/p3q2p/8/8/4N3/8/P6P/4RK2 b - - 6 28",
+   "movedUci": "g1f1",
+   "movedSan": "Kf1",
+   "bestPv": [
+    "e4c5",
+    "e8f8",
+    "e1e7"
+   ],
+   "refutationPv": [
+    "e7d6",
+    "f1g1"
+   ],
+   "wpLoss": 15,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 400
+  }
+ },
+ {
+  "id": "missed_discovered-2",
+  "motif": "MISSED_DISCOVERED_ATTACK",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Black-side mirror: Nc5 discovers Re1 onto the e7 queen (pinned to the king behind it).",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "4r1k1/p6p/8/4n3/8/8/P3Q2P/4K3 b - - 5 28",
+   "fenAfter": "4rk2/p6p/8/4n3/8/8/P3Q2P/4K3 w - - 6 29",
+   "movedUci": "g8f8",
+   "movedSan": "Kf8",
+   "bestPv": [
+    "e5c4",
+    "e1f1",
+    "e8e2"
+   ],
+   "refutationPv": [
+    "e2d3",
+    "f8g8"
+   ],
+   "wpLoss": 15,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 400
+  }
+ },
+ {
+  "id": "missed_back_rank-1",
+  "motif": "MISSED_BACK_RANK",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Rd8# was on; after the king move Black gets ...Ra8 and the mate is gone.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "6k1/r4ppp/8/8/8/8/5PPP/3R2K1 w - - 8 35",
+   "fenAfter": "6k1/r4ppp/8/8/8/8/5PPP/3R1K2 b - - 9 35",
+   "movedUci": "g1f1",
+   "movedSan": "Kf1",
+   "bestPv": [
+    "d1d8"
+   ],
+   "refutationPv": [
+    "a7a8",
+    "f1g1"
+   ],
+   "wpLoss": 25,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 10000
+  }
+ },
+ {
+  "id": "missed_back_rank-2",
+  "motif": "MISSED_BACK_RANK",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Black-side mirror: Rd8# was on; after the king move Black gets ...Ra8 and the mate is gone.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "3r2k1/5ppp/8/8/8/8/R4PPP/6K1 b - - 8 35",
+   "fenAfter": "3r1k2/5ppp/8/8/8/8/R4PPP/6K1 w - - 9 36",
+   "movedUci": "g8f8",
+   "movedSan": "Kf8",
+   "bestPv": [
+    "d8d1"
+   ],
+   "refutationPv": [
+    "a2a1",
+    "f8g8"
+   ],
+   "wpLoss": 25,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 10000
+  }
+ },
+ {
+  "id": "missed_overload-1",
+  "motif": "MISSED_OVERLOAD",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "The d7 queen guards both c6 and g4: Bxc6 QxBc6 then Nxg4 wins a piece.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "6k1/p2q1ppp/2n5/1B6/6b1/8/P4N1P/6K1 w - - 2 26",
+   "fenAfter": "6k1/p2q1ppp/2n5/1B6/6b1/8/P4N1P/7K b - - 3 26",
+   "movedUci": "g1h1",
+   "movedSan": "Kh1",
+   "bestPv": [
+    "b5c6",
+    "d7c6",
+    "f2g4"
+   ],
+   "refutationPv": [
+    "g8h8",
+    "h1g1"
+   ],
+   "wpLoss": 12,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 300
+  }
+ },
+ {
+  "id": "missed_overload-2",
+  "motif": "MISSED_OVERLOAD",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Black-side mirror: The d7 queen guards both c6 and g4: Bxc6 QxBc6 then Nxg4 wins a piece.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "6k1/p4n1p/8/6B1/1b6/2N5/P2Q1PPP/6K1 b - - 2 26",
+   "fenAfter": "7k/p4n1p/8/6B1/1b6/2N5/P2Q1PPP/6K1 w - - 3 27",
+   "movedUci": "g8h8",
+   "movedSan": "Kh8",
+   "bestPv": [
+    "b4c3",
+    "d2c3",
+    "f7g5"
+   ],
+   "refutationPv": [
+    "g1h1",
+    "h8g8"
+   ],
+   "wpLoss": 12,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 300
+  }
+ },
+ {
+  "id": "missed_removing-1",
+  "motif": "MISSED_REMOVING_THE_DEFENDER",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Bxf6 removes the queen's only defender; Rxd7 follows.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "6k1/p2q1ppp/5n2/6B1/8/8/P6P/3R2K1 w - - 4 27",
+   "fenAfter": "6k1/p2q1ppp/5n2/6B1/8/8/P6P/3R1K2 b - - 5 27",
+   "movedUci": "g1f1",
+   "movedSan": "Kf1",
+   "bestPv": [
+    "g5f6",
+    "g7f6",
+    "d1d7"
+   ],
+   "refutationPv": [
+    "d7e6",
+    "f1g1"
+   ],
+   "wpLoss": 22,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 900
+  }
+ },
+ {
+  "id": "missed_removing-2",
+  "motif": "MISSED_REMOVING_THE_DEFENDER",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Black-side mirror: Bxf6 removes the queen's only defender; Rxd7 follows.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "3r2k1/p6p/8/8/6b1/5N2/P2Q1PPP/6K1 b - - 4 27",
+   "fenAfter": "3r1k2/p6p/8/8/6b1/5N2/P2Q1PPP/6K1 w - - 5 28",
+   "movedUci": "g8f8",
+   "movedSan": "Kf8",
+   "bestPv": [
+    "g4f3",
+    "g2f3",
+    "d8d2"
+   ],
+   "refutationPv": [
+    "d2e3",
+    "f8g8"
+   ],
+   "wpLoss": 22,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 900
+  }
+ },
+ {
+  "id": "missed_trapped-1",
+  "motif": "MISSED_TRAPPED_PIECE",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "The a5 knight has no safe square; b4 wins it — the king move lets it slip.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "r5k1/1p3ppp/8/nP6/8/1P6/P6P/6K1 w - - 1 24",
+   "fenAfter": "r5k1/1p3ppp/8/nP6/8/1P6/P6P/5K2 b - - 2 24",
+   "movedUci": "g1f1",
+   "movedSan": "Kf1",
+   "bestPv": [
+    "b3b4",
+    "a8c8",
+    "b4a5",
+    "c8c2"
+   ],
+   "refutationPv": [
+    "g8f8",
+    "f1g1"
+   ],
+   "wpLoss": 12,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 300
+  }
+ },
+ {
+  "id": "missed_trapped-2",
+  "motif": "MISSED_TRAPPED_PIECE",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "Black-side mirror: The a5 knight has no safe square; b4 wins it — the king move lets it slip.",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "6k1/p6p/1p6/8/Np6/8/1P3PPP/R5K1 b - - 1 24",
+   "fenAfter": "5k2/p6p/1p6/8/Np6/8/1P3PPP/R5K1 w - - 2 25",
+   "movedUci": "g8f8",
+   "movedSan": "Kf8",
+   "bestPv": [
+    "b6b5",
+    "a1c1",
+    "b5a4",
+    "c1c7"
+   ],
+   "refutationPv": [
+    "g1f1",
+    "f8g8"
+   ],
+   "wpLoss": 12,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 300
+  }
+ },
+ {
+  "id": "missed_zwischenzug-3",
+  "motif": "MISSED_ZWISCHENZUG",
+  "source": "handcrafted (forgone class)",
+  "themes": [],
+  "note": "White-side: the immediate recapture cxd4 misses Bb5+ first (the two harvested fixtures are black-side).",
+  "input": {
+   "variant": "standard",
+   "fenBefore": "2b1k3/p6p/8/8/3n4/2P1P3/P6P/5BK1 w - - 0 22",
+   "fenAfter": "2b1k3/p6p/8/8/3P4/4P3/P6P/5BK1 b - - 0 22",
+   "movedUci": "c3d4",
+   "movedSan": "cxd4",
+   "bestPv": [
+    "f1b5",
+    "c8d7",
+    "c3d4"
+   ],
+   "refutationPv": [
+    "a7a6",
+    "g1g2"
+   ],
+   "wpLoss": 12,
+   "clockMsRemaining": null,
+   "tbBefore": null,
+   "tbBeforeHit": false,
+   "tbAfter": null,
+   "priorForcingRun": false,
+   "recentOwnSans": [],
+   "classification": "MISS",
+   "bestEvalCp": 350,
+   "playedIsRecapture": true
   }
  }
 ]

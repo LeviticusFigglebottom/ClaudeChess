@@ -42,13 +42,18 @@ import { structuralDetectors } from "./structural";
 /** One source of truth: the DB enum. Detect can only emit storable motifs. */
 export type MotifName = (typeof blunderMotifEnum.enumValues)[number];
 
-/** C2.4 precedence, higher wins. */
+/**
+ * C2.4 precedence, higher wins. "forgone" (Task 3) ranks below structural:
+ * a tactic that was actually punished outranks one that was merely
+ * available in bestPv.
+ */
 export const EVIDENCE_CLASS = {
-  tb: 7,
-  mate: 6,
-  see: 5,
-  geometric: 4,
-  structural: 3,
+  tb: 8,
+  mate: 7,
+  see: 6,
+  geometric: 5,
+  structural: 4,
+  forgone: 3,
   data: 2,
   heuristic: 1,
 } as const;
@@ -91,6 +96,14 @@ export interface MotifDetectionInput {
   recentOwnSans: string[];
   /** This move recaptured on the square the opponent just captured on. */
   playedIsRecapture?: boolean;
+  /** §4.2 classification of this ply (gates the forgone pass: MISS always). */
+  classification?: string | null;
+  /**
+   * Best-play eval of the pre-move position, MOVER's POV in cp (mate for
+   * the mover → 10000). Gates the forgone pass for MISTAKE/BLUNDER: a
+   * bestPv winning ≥ 300cp is simultaneously an error and a forgone win.
+   */
+  bestEvalCp?: number | null;
   /**
    * Mobility across the quiet run (C2.3 PASSIVITY: "dropped over a run of
    * three or more non-forcing moves"): mover's mobility at the run's start
@@ -310,53 +323,9 @@ function backRank(ctx: Ctx): MotifDetection | null {
   };
 }
 
-/**
- * BACK_RANK, missed direction: the position BEFORE the move held a forced
- * back-rank mate for the mover (bestPv mates on the opponent's back rank
- * with pawn-blocked escapes) and the played move let it go. Same geometry
- * as the suffered case — the error is about a back rank either way.
- */
-function missedBackRankMate(ctx: Ctx): MotifDetection | null {
-  const best = ctx.input.bestPv;
-  if (best.length === 0 || best[0] === ctx.input.movedUci) return null;
-  const replay = GamePosition.fromFen(ctx.input.fenBefore, ctx.variant);
-  let lastUci: string | null = null;
-  for (const uci of best.slice(0, 8)) {
-    if (!replay.moveUci(uci)) return null;
-    lastUci = uci;
-  }
-  if (!replay.isCheckmate() || lastUci === null) return null;
-  const finalGeo = posFromFen(replay.fen());
-  const opponent = opposite(ctx.mover);
-  if (finalGeo.turn !== (opponent === "white" ? "white" : "black")) return null;
-  const king = finalGeo.board.kingOf(opponent);
-  if (king === undefined) return null;
-  const backRankIndex = opponent === "white" ? 0 : 7;
-  if (Math.floor(king / 8) !== backRankIndex) return null;
-  const { to: matingSquare } = uciSquares(lastUci);
-  if (Math.floor(matingSquare / 8) !== backRankIndex) return null;
-  const forward = opponent === "white" ? 8 : -8;
-  const file = king % 8;
-  const escapes: Square[] = [];
-  for (const df of [-1, 0, 1]) {
-    const s = king + forward + df;
-    if (s >= 0 && s < 64 && Math.abs((s % 8) - file) <= 1) escapes.push(s);
-  }
-  const theirPawns = finalGeo.board.pawn.intersect(finalGeo.board[opponent]);
-  if (!escapes.every((s) => theirPawns.has(s))) return null;
-  return {
-    motif: "BACK_RANK",
-    confidence: 0.9,
-    evidenceClass: EVIDENCE_CLASS.mate,
-    stakeCp: 10_000,
-    evidence: {
-      missed: true,
-      mateInPlies: Math.ceil(best.length / 2),
-      matingSquare: squareName(matingSquare),
-      bestLineStart: best[0],
-    },
-  };
-}
+// The former missedBackRankMate special case is superseded by the forgone
+// pass: the SUFFERED backRank predicate runs unchanged on the mirrored
+// bestPv context and emits MISSED_BACK_RANK.
 
 /**
  * The move walks into a FORCED mate whose line lands on the mover's king
@@ -954,10 +923,13 @@ function zwischenzugMissed(ctx: Ctx): MotifDetection | null {
     (uci, index) => index % 2 === 0 && uci.slice(2, 4) === recaptureSquare
   );
   if (recaptureIndex !== -1 && recaptureIndex < 2) return null;
+  // Already a bestPv-side predicate — under Task 3 it belongs to the
+  // forgone family (the old ZWISCHENZUG_MISSED enum value stays in the DB
+  // but is no longer emitted).
   return {
-    motif: "ZWISCHENZUG_MISSED",
+    motif: "MISSED_ZWISCHENZUG",
     confidence: 0.6,
-    evidenceClass: EVIDENCE_CLASS.heuristic,
+    evidenceClass: EVIDENCE_CLASS.forgone,
     stakeCp: 200,
     evidence: {
       played: input.movedUci,
@@ -1035,6 +1007,81 @@ function tunnelVision(ctx: Ctx): MotifDetection | null {
 }
 
 /** C2.3/C2.4: runs every detector, ranks, returns all fired ≥ 0.6. */
+/**
+ * Forgone-side context (Task 3): classification MISS has no refutation —
+ * the mechanism lives in bestPv, the line the player should have played.
+ * Reuse buildCtx with fenAfter := fenBefore and refutation := bestPv, then
+ * flip ctx.mover to the OPPONENT: every steps-based predicate now reads
+ * "the enemy of ctx.mover creates a tactic against ctx.mover" as "the
+ * actual mover's best line creates a tactic against the opponent" — same
+ * predicates, other line, perspective flipped.
+ */
+function buildForgoneCtx(input: MotifDetectionInput): Ctx | null {
+  if (input.bestPv.length === 0) return null;
+  const mirror: MotifDetectionInput = {
+    ...input,
+    fenAfter: input.fenBefore,
+    refutationPv: input.bestPv,
+  };
+  const ctx = buildCtx(mirror);
+  if (!ctx) return null;
+  return { ...ctx, mover: opposite(ctx.before.turn) };
+}
+
+/**
+ * MISSED_PIN: bestPv[0] lands a line piece that ABSOLUTELY pins an enemy
+ * piece to its king (it legally cannot leave the ray) and capturing the
+ * pinned piece does not lose on SEE. The one forgone motif without a
+ * refutation-side twin — pinnedPieceMoved is played-move-relative — built
+ * from the same ray/SEE primitives.
+ */
+function missedPinAt(ctx: Ctx): Omit<MotifDetection, "motif" | "evidenceClass"> | null {
+  const first = ctx.refutationSteps[0];
+  if (!first) return null;
+  const { to: from } = uciSquares(first.uci);
+  const afterFirst = posFromFen(ctx.refutationFens[1] ?? "");
+  const piece = afterFirst.board.get(from);
+  if (!piece || piece.color === ctx.mover) return null;
+  if (piece.role !== "bishop" && piece.role !== "rook" && piece.role !== "queen") return null;
+  const king = afterFirst.board.kingOf(ctx.mover);
+  if (king === undefined) return null;
+  const sight = attacks(piece, from, afterFirst.board.occupied);
+  for (const p1 of sight.intersect(afterFirst.board[ctx.mover])) {
+    const front = afterFirst.board.get(p1);
+    if (!front || front.role === "king" || front.role === "pawn") continue;
+    // The king sits directly behind P1 on the pinner's ray → absolute pin.
+    if (!ray(from, p1).has(king) || !between(from, king).has(p1)) continue;
+    if (!attacks(piece, from, afterFirst.board.occupied.without(p1)).has(king)) continue;
+    const captureUci = `${squareName(from)}${squareName(p1)}`;
+    if (see(afterFirst, captureUci) < 0) continue;
+    return {
+      confidence: 0.85,
+      stakeCp: SEE_VALUES[front.role],
+      evidence: {
+        pinner: squareName(from),
+        pinned: { square: squareName(p1), role: front.role },
+        king: squareName(king),
+        move: first.uci,
+      },
+    };
+  }
+  return null;
+}
+
+/** [source detector, MISSED_ name] pairs run against the forgone context. */
+const FORGONE_SOURCES: [
+  (ctx: Ctx) => MotifDetection | null,
+  MotifName,
+][] = [
+  [backRank, "MISSED_BACK_RANK"],
+  [forkAllowed, "MISSED_FORK"],
+  [skewerAllowed, "MISSED_SKEWER"],
+  [discoveredAttackMissed, "MISSED_DISCOVERED_ATTACK"],
+  [overloadedDefender, "MISSED_OVERLOAD"],
+  [removingTheDefender, "MISSED_REMOVING_THE_DEFENDER"],
+  [trappedPiece, "MISSED_TRAPPED_PIECE"],
+];
+
 export function detectMotifs(input: MotifDetectionInput): MotifDetection[] {
   const ctx = buildCtx(input);
   if (!ctx) {
@@ -1056,7 +1103,6 @@ export function detectMotifs(input: MotifDetectionInput): MotifDetection[] {
 
   for (const detection of tbDetectors(ctx)) push(detection);
   push(backRank(ctx));
-  push(missedBackRankMate(ctx));
   push(mateAllowed(ctx));
   push(hangingPiece(ctx));
   push(deepHangingPiece(ctx));
@@ -1075,7 +1121,42 @@ export function detectMotifs(input: MotifDetectionInput): MotifDetection[] {
   // Structural class (positional mechanisms) — registered after the
   // tactical detectors; class ranking keeps them below geometric.
   for (const detection of structuralDetectors(ctx)) push(detection);
-  push(zwischenzugMissed(ctx));
+
+  // Forgone class (Task 3): for classification MISS — which has no
+  // refutation — and for any error whose bestPv wins ≥ 300cp or mates,
+  // run the SAME geometric predicates against bestPv (mirrored context)
+  // and emit MISSED_ variants. Both mechanisms are stored for a
+  // MISTAKE/BLUNDER that is simultaneously an error and a forgone win.
+  const forgoneGate =
+    input.classification === "MISS" || (input.bestEvalCp ?? 0) >= 300;
+  if (forgoneGate) {
+    const forgoneCtx = buildForgoneCtx(input);
+    if (forgoneCtx) {
+      for (const [source, missedName] of FORGONE_SOURCES) {
+        const detection = source(forgoneCtx);
+        if (detection) {
+          push({
+            ...detection,
+            motif: missedName,
+            evidenceClass: EVIDENCE_CLASS.forgone,
+            evidence: { ...detection.evidence, forgone: true, bestLineStart: input.bestPv[0] },
+          });
+        }
+      }
+      const pin = missedPinAt(forgoneCtx);
+      if (pin) {
+        push({
+          ...pin,
+          motif: "MISSED_PIN",
+          evidenceClass: EVIDENCE_CLASS.forgone,
+          evidence: { ...pin.evidence, forgone: true, bestLineStart: input.bestPv[0] },
+        });
+      }
+    }
+    // Played-move-relative by nature: runs on the ORIGINAL context but
+    // belongs to the forgone family (bestPv holds the zwischenzug).
+    push(zwischenzugMissed(ctx));
+  }
   push(prematureAttack(ctx));
   push(passivity(ctx));
   push(tunnelVision(ctx));

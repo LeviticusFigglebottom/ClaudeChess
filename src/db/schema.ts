@@ -138,6 +138,21 @@ export const blunderMotifEnum = pgEnum("blunder_motif", [
   "GOOD_PIECE_TRADED",
   "PAWN_BREAK_MISSED",
   "KING_WALK",
+  // Forgone class (Task 3): classification MISS has no refutation — the
+  // mechanism lives in bestPv, the line the player should have played. The
+  // EXISTING geometric predicates run against bestPv (mover's perspective
+  // flipped) and emit these MISSED_ variants. Evidence class "forgone",
+  // ranked below structural: a tactic actually punished outranks one merely
+  // available.
+  "MISSED_FORK",
+  "MISSED_PIN",
+  "MISSED_SKEWER",
+  "MISSED_DISCOVERED_ATTACK",
+  "MISSED_BACK_RANK",
+  "MISSED_OVERLOAD",
+  "MISSED_REMOVING_THE_DEFENDER",
+  "MISSED_TRAPPED_PIECE",
+  "MISSED_ZWISCHENZUG",
   "UNCLEAR",
 ]);
 
