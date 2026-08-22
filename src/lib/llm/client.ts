@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { llmCache } from "@/db/schema";
-import type { Db } from "@/lib/account/types";
+import { AccountError, type Db } from "@/lib/account/types";
 
 /**
  * Server-side LLM access (spec §2 stack row: Anthropic API, model pinned by
@@ -24,9 +24,14 @@ export function evidenceHash(payload: unknown): string {
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 32);
 }
 
-export class LlmUnavailableError extends Error {
+/**
+ * Extends AccountError so the route adapters' jsonError maps it to a clean
+ * 503 (code "llm_unavailable") instead of a generic 500 — the no-key
+ * deployment is a supported degraded mode, not an internal error.
+ */
+export class LlmUnavailableError extends AccountError {
   constructor() {
-    super("LLM is not configured on this deployment (ANTHROPIC_API_KEY).");
+    super("llm_unavailable", "LLM is not configured on this deployment (ANTHROPIC_API_KEY).", 503);
   }
 }
 
