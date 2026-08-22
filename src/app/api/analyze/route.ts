@@ -16,6 +16,14 @@ import { createTablebaseClient } from "@/lib/analysis/tablebase";
  * done (that loop IS the streamed progress).
  */
 
+/**
+ * Fluid compute allows 300s on Hobby (measured: the platform kills at
+ * exactly 300s). Explicit so chunk sizing below can rely on it: the ~60s
+ * work target plus the worst single-search overshoot (one d24:1 verify
+ * search, fitted budget 64s) stays far inside the window.
+ */
+export const maxDuration = 300;
+
 let sharedPool: AnalysisPool | null = null;
 function pool(): AnalysisPool {
   sharedPool ??= new AnalysisPool({ cap: 2, hashMb: 128 });
@@ -60,7 +68,10 @@ export async function POST(request: Request) {
       pool: pool(),
       tb: createTablebaseClient(db),
       maxPositions: Math.min(CHUNK, Math.max(2, allowance.remaining)),
-      maxMs: 9_000,
+      // Work target per call — sized against maxDuration above, NOT a
+      // platform guess: the deadline is checked between searches, so the
+      // real ceiling is target + one search budget.
+      maxMs: 60_000,
     });
     if (result.analyzedPlies > 0) {
       await consumeUsage(db, user, { kind: "analysisPliesDeep", amount: result.analyzedPlies });
@@ -71,6 +82,10 @@ export async function POST(request: Request) {
       progress,
       done: result.remainingPlies === 0,
       finalized: result.finalized,
+      // Distinguishes the borderline-verification phase (evals complete,
+      // analyzedPlies 0, not done) so the client can say what is happening
+      // instead of pinning the bar at 100% in silence.
+      verifyRemaining: result.analyzedPlies === 0 ? result.remainingPlies : 0,
     });
   });
 }

@@ -17,6 +17,10 @@ const SHAPES: { depth: number; multipv: number; n: number }[] = [
   { depth: 16, multipv: 1, n: 120 },
   { depth: 24, multipv: 3, n: 40 },
   { depth: 24, multipv: 5, n: 40 },
+  // The verify pass's ACTUAL shape (d24 MultiPV 1) — fitted after the
+  // truncation finding so its budget and truncation share are measured,
+  // not extrapolated.
+  { depth: 24, multipv: 1, n: 40 },
 ];
 
 const client = postgres(process.env.DATABASE_URL ?? "postgres://gambit:gambit@127.0.0.1:5432/gambit", { prepare: false });

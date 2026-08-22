@@ -48,6 +48,53 @@ export function customPiecesFor(setId: PieceSetId): Record<PieceCode, PieceRende
   ) as Record<PieceCode, PieceRenderer>;
 }
 
+const UNICODE_PIECES: Record<PieceCode, string> = {
+  wK: "♔",
+  wQ: "♕",
+  wR: "♖",
+  wB: "♗",
+  wN: "♘",
+  wP: "♙",
+  bK: "♚",
+  bQ: "♛",
+  bR: "♜",
+  bB: "♝",
+  bN: "♞",
+  bP: "♟",
+};
+
+/** A single standalone piece (settings previews, player cards). The classic
+ * set has no SVG files (it is the board library's built-in) — Unicode glyphs
+ * stand in for it. */
+export function PieceGlyph({
+  piece,
+  setId,
+  size = 28,
+}: {
+  piece: PieceCode;
+  setId: PieceSetId;
+  size?: number;
+}) {
+  if (setId === "classic") {
+    return (
+      <span aria-hidden style={{ fontSize: size * 0.85, lineHeight: 1 }}>
+        {UNICODE_PIECES[piece]}
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`/pieces/${setId}/${piece}.svg`}
+      width={size}
+      height={size}
+      alt=""
+      draggable={false}
+      style={{ pointerEvents: "none" }}
+    />
+  );
+}
+
 const SAN_PIECE_LETTERS = new Set(["K", "Q", "R", "B", "N"]);
 
 /**

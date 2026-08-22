@@ -266,7 +266,7 @@ export function PuzzlesClient() {
           />
         </div>
         <div className="w-full lg:w-80">
-          <div className="rounded-xl border border-edge p-4">
+          <div className="card p-4">
             {phase === "loading" && <p className="text-sm text-text-faint">Loading puzzle…</p>}
             {(phase === "presenting" || phase === "solving") && puzzle && position && (
               <>
@@ -300,13 +300,13 @@ export function PuzzlesClient() {
                 <div className="mt-3 flex gap-2">
                   <button
                     onClick={retry}
-                    className="rounded border border-edge px-3 py-1 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+                    className="btn-ghost px-3 py-1 text-sm"
                   >
                     Retry (unrated)
                   </button>
                   <button
                     onClick={revealSolution}
-                    className="rounded border border-edge px-3 py-1 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+                    className="btn-ghost px-3 py-1 text-sm"
                   >
                     View solution
                   </button>

@@ -17,17 +17,23 @@
  *   16:1           120    201ms     507ms     760ms    →   3s
  *   24:3            40  15147ms   42390ms   42814ms    → 129s
  *   24:5            40  23908ms   73942ms  110066ms    → 331s
+ *   24:1            40   5511ms   17301ms   21016ms    →  64s
  *
  * Honest finding from the fit: the previous hard-coded 20s soft-stop sat
  * BELOW d24's p50–tail range — verify-pass d24 searches were being silently
- * truncated and recorded at full depth. Under the watchdog they either
- * complete inside the fitted ceiling or degrade HONESTLY.
+ * truncated and recorded at full depth. The verify pass's ACTUAL shape is
+ * 24:1 (MultiPV 1), where only 1/40 fit samples (2.5%, max 21016ms)
+ * exceeded 20s — so the truncation exposure was real but narrow; the
+ * re-verification pass (scripts/reverify-d24.mts) measured the actual
+ * classification impact. Under the watchdog, searches either complete
+ * inside the fitted ceiling or degrade HONESTLY.
  */
 export const SEARCH_BUDGETS_MS: Record<string, number> = {
   "18:3": 15_000,
   "16:1": 3_000,
   "24:3": 129_000,
   "24:5": 331_000,
+  "24:1": 64_000,
 };
 
 /**

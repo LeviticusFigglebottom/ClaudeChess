@@ -60,12 +60,12 @@ export function GameSetupCard({
   const chip = (active: boolean) =>
     `rounded-lg border px-3 py-1.5 text-sm transition-colors ${
       active
-        ? "border-lcd bg-raise text-text"
-        : "border-edge text-text-dim hover:border-edge-strong hover:text-text"
+        ? "border-accent bg-surface-3 text-text"
+        : "border-edge text-text-dim hover:border-edge-strong hover:bg-surface-2 hover:text-text"
     }`;
 
   return (
-    <div className="max-w-xl rounded-xl border border-edge p-5">
+    <div className="card p-5">
       <h2 className="mb-4 text-lg font-semibold text-paper">Play a bot</h2>
 
       <div className="mb-4">
@@ -162,7 +162,7 @@ export function GameSetupCard({
             checked={effectiveRated}
             disabled={!ratedAllowed}
             onChange={(event) => setRated(event.target.checked)}
-            className="accent-[var(--lcd)]"
+            className="accent-[var(--accent)]"
           />
           Rated
         </label>
@@ -177,10 +177,7 @@ export function GameSetupCard({
       </div>
 
       <div className="flex items-center gap-3">
-        <button
-          onClick={start}
-          className="rounded-lg bg-paper px-5 py-2 font-medium text-field hover:bg-white-adv"
-        >
+        <button onClick={start} className="btn-primary">
           Start game
         </button>
         <button onClick={onFreeBoard} className="text-sm text-text-dim hover:text-text">

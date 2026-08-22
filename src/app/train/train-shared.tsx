@@ -19,7 +19,7 @@ export function TrainerGate({
   return (
     <div>
       <div className="mb-4 flex items-baseline justify-between gap-4">
-        <h1 className="text-xl font-semibold text-paper">{title}</h1>
+        <h1 className="text-2xl font-bold text-paper">{title}</h1>
         <Link href="/train" className="text-sm text-text-dim hover:text-text">
           ← trainers
         </Link>

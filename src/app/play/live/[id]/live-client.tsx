@@ -363,12 +363,12 @@ export function LiveClient({ gameId }: { gameId: string }) {
                 onChange={(event) => setSanInput(event.target.value)}
                 placeholder="Type a move (SAN — e4, Nf3, O-O)"
                 aria-label="Keyboard move entry"
-                className="min-w-0 flex-1 rounded-lg border border-edge bg-transparent px-3 py-1.5 text-sm placeholder:text-text-faint"
+                className="min-w-0 flex-1 rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-sm placeholder:text-text-faint"
               />
               <button
                 type="submit"
                 disabled={!isYourTurn}
-                className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong disabled:opacity-50"
+                className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-50"
               >
                 Play
               </button>
@@ -377,7 +377,7 @@ export function LiveClient({ gameId }: { gameId: string }) {
         </div>
 
         <div className="w-full lg:w-80">
-          <div className="rounded-xl border border-edge p-4">
+          <div className="card p-4">
             <p className="text-sm text-text">
               {state.rated ? "Rated" : "Casual"}
               {state.variant === "chess960" && " · Chess960"}
@@ -420,7 +420,7 @@ export function LiveClient({ gameId }: { gameId: string }) {
                 <p className="text-sm text-text-dim">{state.termination}</p>
                 <Link
                   href="/play"
-                  className="mt-3 inline-block rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90"
+                  className="btn-primary mt-3 px-4 py-1.5 text-sm"
                 >
                   New game
                 </Link>
@@ -431,7 +431,7 @@ export function LiveClient({ gameId }: { gameId: string }) {
             )}
           </div>
 
-          <div className="mt-4 max-h-72 overflow-y-auto rounded-lg border border-edge p-3" data-testid="live-moves">
+          <div className="card mt-4 max-h-72 overflow-y-auto p-3" data-testid="live-moves">
             {state.movesSan.length === 0 ? (
               <p className="text-sm text-text-faint">No moves yet.</p>
             ) : (
@@ -478,7 +478,7 @@ function PlayerBar({
   flag: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-edge px-3 py-1.5">
+    <div className="flex items-center justify-between rounded-lg border border-edge bg-surface px-3 py-1.5">
       <span className="text-sm text-text">
         {player.handle}
         {player.rating !== null && (
@@ -501,7 +501,7 @@ function ActionButton({ children, onClick }: { children: React.ReactNode; onClic
   return (
     <button
       onClick={onClick}
-      className="rounded border border-edge px-3 py-1 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+      className="btn-ghost px-3 py-1 text-sm"
     >
       {children}
     </button>
@@ -511,7 +511,7 @@ function ActionButton({ children, onClick }: { children: React.ReactNode; onClic
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <h1 className="mb-4 text-xl font-semibold text-paper">Live game</h1>
+      <h1 className="mb-4 text-2xl font-bold text-paper">Live game</h1>
       {children}
     </div>
   );

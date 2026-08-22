@@ -78,7 +78,7 @@ export function FingerprintClient() {
       ) : (
         <div className="flex flex-col gap-6 lg:flex-row">
           <div className="w-full lg:w-[26rem]">
-            <div className="rounded-xl border border-edge p-4">
+            <div className="card p-4">
               <h2 className="mb-2 text-sm font-semibold text-paper">Tactical vs positional</h2>
               <div className="mb-1 flex h-3 overflow-hidden rounded bg-raise" aria-hidden>
                 <div
@@ -181,7 +181,7 @@ export function FingerprintClient() {
               )}
               <Link
                 href={`/puzzles?themes=${encodeURIComponent(report.drill.themes.join(","))}`}
-                className="inline-block rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90"
+                className="inline-block btn-primary px-4 py-1.5 text-sm"
               >
                 Drill these ({report.drill.themes.length} themes)
               </Link>
@@ -189,7 +189,7 @@ export function FingerprintClient() {
           </div>
           <div className="w-full lg:flex-1">
             {selected && (
-              <div className="rounded-xl border border-edge p-4">
+              <div className="card p-4">
                 <h3 className="mb-2 text-sm font-semibold text-paper">
                   {motifLabel(selected)} — instances
                 </h3>

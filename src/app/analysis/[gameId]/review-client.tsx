@@ -89,6 +89,7 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   const [cursor, setCursor] = useState(0); // 0 = start position, n = after ply n
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState<{ analyzed: number; total: number } | null>(null);
+  const [verifying, setVerifying] = useState(0);
   const liveRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(() => {
@@ -111,20 +112,48 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   const analyze = useCallback(async () => {
     setAnalyzing(true);
     try {
+      let retried = false;
+      let stalled = 0;
+      let lastState = "";
       for (;;) {
         const response = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ gameId }),
         });
-        const body = (await response.json()) as {
+        interface ChunkPayload {
+          analyzedPlies?: number;
           progress?: { analyzed: number; total: number };
+          verifyRemaining?: number;
           done?: boolean;
           error?: { message: string };
-        };
+        }
+        let body: ChunkPayload | null = null;
+        try {
+          body = (await response.json()) as ChunkPayload;
+        } catch {
+          // Platform error pages (e.g. a gateway timeout) are not JSON.
+        }
+        if (body === null) {
+          // Retry a transient service failure once before surfacing it.
+          if (!retried && response.status >= 500) {
+            retried = true;
+            continue;
+          }
+          throw new ApiError(response.status, "analyze", `analysis service error (HTTP ${response.status})`, null);
+        }
         if (!response.ok) throw new ApiError(response.status, "analyze", body.error?.message ?? "failed", body);
         if (body.progress) setProgress(body.progress);
+        setVerifying(body.verifyRemaining ?? 0);
         if (body.done) break;
+        // Stall guard: chunk calls that repeatedly make zero progress would
+        // loop forever — stop honestly and keep what was analyzed.
+        const state = `${body.progress?.analyzed ?? 0}:${body.verifyRemaining ?? 0}`;
+        stalled = state === lastState && (body.analyzedPlies ?? 0) === 0 ? stalled + 1 : 0;
+        lastState = state;
+        if (stalled >= 6) {
+          throw new Error("Analysis stalled — keeping the plies analyzed so far. Try again later.");
+        }
       }
       load();
     } catch (err) {
@@ -132,6 +161,7 @@ export function ReviewClient({ gameId }: { gameId: string }) {
     } finally {
       setAnalyzing(false);
       setProgress(null);
+      setVerifying(0);
     }
   }, [gameId, load]);
 
@@ -239,11 +269,11 @@ export function ReviewClient({ gameId }: { gameId: string }) {
       </header>
 
       {!analyzed && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-edge p-3">
+        <div className="card mb-4 flex items-center gap-3 p-3">
           <button
             onClick={() => void analyze()}
             disabled={analyzing}
-            className="rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90 disabled:opacity-50"
+            className="btn-primary px-4 py-1.5 text-sm"
           >
             {analyzing ? "Analyzing…" : "Analyze game"}
           </button>
@@ -255,13 +285,15 @@ export function ReviewClient({ gameId }: { gameId: string }) {
                     className="h-full rounded-full"
                     style={{
                       width: `${(progress.analyzed / Math.max(1, progress.total)) * 100}%`,
-                      background: "var(--lcd)",
+                      background: "var(--accent)",
                       transition: "width var(--motion-eval) ease-out",
                     }}
                   />
                 </div>
                 <p className="notation mt-1 text-xs text-text-faint">
-                  {progress.analyzed} / {progress.total} plies at depth 18
+                  {verifying > 0
+                    ? `verifying ${verifying} borderline ${verifying === 1 ? "eval" : "evals"} at depth 24…`
+                    : `${progress.analyzed} / ${progress.total} plies at depth 18`}
                 </p>
               </>
             ) : (
@@ -361,7 +393,7 @@ function Shell({ children, gameId }: { children: React.ReactNode; gameId?: strin
   return (
     <div>
       <div className="mb-3 flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-paper">Review</h1>
+        <h1 className="text-2xl font-bold text-paper">Review</h1>
         <span className="flex gap-4">
           {gameId && (
             <Link
@@ -394,7 +426,7 @@ function NavButton({
     <button
       onClick={onClick}
       aria-label={label}
-      className="rounded border border-edge px-2.5 py-1 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+      className="btn-ghost px-2.5 py-1 text-sm"
     >
       {children}
     </button>
@@ -423,7 +455,7 @@ function MoveList({
   const rows = [...byNumber.entries()].sort((a, b) => a[0] - b[0]);
 
   return (
-    <div className="max-h-[420px] overflow-y-auto rounded-lg border border-edge p-2">
+    <div className="card max-h-[420px] overflow-y-auto p-2">
       {rows.map(([number, row]) => (
         <div key={number} className="flex items-center gap-1 py-0.5 text-sm">
           <span className="notation w-8 text-right text-xs text-text-faint">{number}.</span>
@@ -540,7 +572,7 @@ function PostmortemGate({
   };
 
   return (
-    <div className="mt-3 rounded-lg border border-lcd/40 p-3">
+    <div className="card mt-3 border-accent/40 p-3">
       {result === null ? (
         <>
           <p className="text-sm text-text">
@@ -559,7 +591,7 @@ function PostmortemGate({
             <button
               onClick={() => void submit()}
               disabled={busy || reasoning.trim().length < 3}
-              className="rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90 disabled:opacity-50"
+              className="btn-primary px-4 py-1.5 text-sm"
             >
               {busy ? "Thinking…" : "Answer, then reveal"}
             </button>
@@ -604,7 +636,7 @@ function PlyDetail({ ply, variant }: { ply: PlyPayload; variant: VariantId }) {
 
   const loss = ply.wpLoss ?? 0;
   return (
-    <div className="mt-3 rounded-lg border border-edge p-3">
+    <div className="card mt-3 p-3">
       <div className="flex items-baseline gap-2">
         <span className="notation text-sm text-text">
           {ply.moveNumber}{ply.color === "black" ? "…" : "."} {ply.san}

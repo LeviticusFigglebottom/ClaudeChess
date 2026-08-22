@@ -15,8 +15,20 @@ if (!url) {
   process.exit(1);
 }
 
-const entries = JSON.parse(await readFile(path.resolve("src/db/seed/openings.json"), "utf8"));
+const raw = await readFile(path.resolve("src/db/seed/openings.json"), "utf8");
+const entries = JSON.parse(raw);
 const sql = postgres(url, { prepare: false });
+
+// Version guard (#3): content hash in the table comment — an unchanged
+// dataset skips the upsert entirely on every build.
+const { createHash } = await import("node:crypto");
+const version = `openings:${createHash("sha256").update(raw).digest("hex").slice(0, 16)}`;
+const [existing] = await sql`SELECT obj_description('openings'::regclass) AS comment`;
+if (existing?.comment === version) {
+  console.log(`openings: already at ${version} — skipping`);
+  await sql.end();
+  process.exit(0);
+}
 
 const BATCH = 500;
 let written = 0;
@@ -37,5 +49,6 @@ for (let i = 0; i < entries.length; i += BATCH) {
 }
 
 const [{ count }] = await sql`select count(*)::int as count from openings`;
+await sql.unsafe(`COMMENT ON TABLE openings IS '${version}'`);
 console.log(`openings: upserted ${written}, table now holds ${count} rows`);
 await sql.end();

@@ -4,7 +4,14 @@
  * Every read/write is defensive — storage can be absent or throw.
  */
 
-export type BoardThemeId = "tournament" | "slate" | "walnut" | "high-contrast";
+export type BoardThemeId =
+  | "tournament"
+  | "emerald"
+  | "walnut"
+  | "slate"
+  | "ice"
+  | "amethyst"
+  | "high-contrast";
 export type PieceSetId = "classic" | "cburnett";
 export type AnimationPref = "instant" | "fast" | "normal" | "slow";
 
@@ -66,8 +73,11 @@ export const DEFAULT_PREFS: Prefs = {
 /** Board themes are token pairs, not textures — no asset, no license burden. */
 export const BOARD_THEMES: Record<BoardThemeId, { name: string; light: string; dark: string }> = {
   tournament: { name: "Tournament (LCD)", light: "#e6e7e1", dark: "#9eaf96" },
-  slate: { name: "Slate", light: "#cbd5e0", dark: "#4a5568" },
+  emerald: { name: "Emerald", light: "#ebecd0", dark: "#779556" },
   walnut: { name: "Walnut", light: "#ead8b7", dark: "#9a6b44" },
+  slate: { name: "Slate", light: "#cbd5e0", dark: "#4a5568" },
+  ice: { name: "Ice", light: "#dee3e6", dark: "#8ca2ad" },
+  amethyst: { name: "Amethyst", light: "#e6dbf1", dark: "#8e6bab" },
   "high-contrast": { name: "High contrast", light: "#ffffff", dark: "#1c1c1c" },
 };
 
@@ -118,7 +128,9 @@ export function savePrefs(prefs: Prefs): void {
 export function boardColors(prefs: Prefs): { light: string; dark: string } {
   const theme = prefs.accessibility.highContrastBoard
     ? BOARD_THEMES["high-contrast"]
-    : BOARD_THEMES[prefs.boardTheme];
+    : // Stored prefs can name a theme id from another app version — fall
+      // back rather than crash the board.
+      (BOARD_THEMES[prefs.boardTheme] ?? BOARD_THEMES.tournament);
   return { light: theme.light, dark: theme.dark };
 }
 

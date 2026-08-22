@@ -75,7 +75,7 @@ export function FriendsClient() {
     <Shell>
       {notice && <p className="mb-4 text-sm text-text-dim">{notice}</p>}
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-xl border border-edge p-5">
+        <section className="card p-5">
           <h2 className="mb-3 text-base font-semibold text-paper">Friends</h2>
           <AddFriendForm onSubmit={(handle) => act(() => friendsApi.request(handle), "Request sent.")} />
 
@@ -160,7 +160,7 @@ export function FriendsClient() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-edge p-5">
+        <section className="card p-5">
           <h2 className="mb-3 text-base font-semibold text-paper">Challenges</h2>
           <OpenChallengeForm
             onCreated={(challenge) => {
@@ -228,7 +228,7 @@ export function FriendsClient() {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <h1 className="mb-5 text-xl font-semibold text-paper">Friends &amp; challenges</h1>
+      <h1 className="mb-5 text-2xl font-bold text-paper">Friends &amp; challenges</h1>
       {children}
     </div>
   );
@@ -377,7 +377,7 @@ function OpenChallengeForm({
   };
 
   return (
-    <div className="rounded-lg border border-edge p-3">
+    <div className="rounded-xl border border-edge bg-surface-2 p-3">
       <p className="mb-2 text-xs text-text-faint">
         Create an open challenge link — anyone who opens it can accept.
       </p>
@@ -405,7 +405,7 @@ function OpenChallengeForm({
         </select>
         <button
           onClick={create}
-          className="rounded bg-lcd px-3 py-1 text-sm font-medium text-field hover:opacity-90"
+          className="btn-primary px-3 py-1 text-sm"
         >
           Create link
         </button>
