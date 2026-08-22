@@ -26,10 +26,10 @@ Every phase gate below was executed by machine on this build (local Postgres 16,
 | Gate | Measured |
 |---|---|
 | Matchmaking pairs two queued players | ✅ both contexts land in the same live game via the UI |
-| No desync | ✅ 30 scripted plies: after every ply both boards equal the facade-replay FEN; seq never diverged (propagation median 191ms first run / 302ms under load) |
+| No desync | ✅ 30 scripted plies: after every ply both boards equal the facade-replay FEN; seq never diverged. Propagation median **103ms**, max 156ms (production server; 191–302ms on dev under load) |
 | A3.5 premove | ✅ armed while waiting, auto-fired on turn, server-validated |
 | Completion + flagfall | ✅ ends `0-1 · time forfeit`, both browsers identical; claim verified server-side |
-| Clock drift at flag < 200ms | ✅ <!-- PHASE4_DRIFT --> — recorded as the SIGNED `remainingAtFlagMs` in the end event (a clamped 0 is not accepted as evidence) |
+| Clock drift at flag < 200ms | ✅ **−41ms** — the verified claim landed 41ms past true zero, recorded as the SIGNED `remainingAtFlagMs` in the end event (an earlier clamped-to-0 recording was rejected as evidence and replaced with the signed value; a contended-CPU run measured −4.3s, which motivated the lazy server-side flag finalize on state reads) |
 
 ### Phase 4.5 — variants (`gate-phase45.mts` + `gate-phase45-live.mts`)
 

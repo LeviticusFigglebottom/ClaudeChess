@@ -68,6 +68,7 @@ export function LiveClient({ gameId }: { gameId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const [premove, setPremove] = useState<{ from: string; to: string } | null>(null);
+  const [sanInput, setSanInput] = useState("");
   const receivedAtRef = useRef(0);
   const seqRef = useRef(0);
   const flagClaimedRef = useRef(false);
@@ -336,6 +337,42 @@ export function LiveClient({ gameId }: { gameId: string }) {
                 cancel
               </button>
             </p>
+          )}
+          {state.status === "active" && yourColor !== null && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!isYourTurn || !position) return;
+                try {
+                  const probe = GamePosition.fromFen(state.fen, state.variant as VariantId);
+                  const move = probe.moveSan(sanInput.trim());
+                  if (move) {
+                    void post({ action: "move", uci: move.uci });
+                    setSanInput("");
+                  } else {
+                    play("illegal");
+                  }
+                } catch {
+                  play("illegal");
+                }
+              }}
+              className="mt-2 flex gap-2"
+            >
+              <input
+                value={sanInput}
+                onChange={(event) => setSanInput(event.target.value)}
+                placeholder="Type a move (SAN — e4, Nf3, O-O)"
+                aria-label="Keyboard move entry"
+                className="min-w-0 flex-1 rounded-lg border border-edge bg-transparent px-3 py-1.5 text-sm placeholder:text-text-faint"
+              />
+              <button
+                type="submit"
+                disabled={!isYourTurn}
+                className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong disabled:opacity-50"
+              >
+                Play
+              </button>
+            </form>
           )}
         </div>
 
