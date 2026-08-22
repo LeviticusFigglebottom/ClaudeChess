@@ -1,5 +1,11 @@
 {
   "bands": {
+    "1000": {
+      "pBlunder": 0.378,
+      "temperature": 5.283,
+      "formulaEquivalent": 815,
+      "note": "1000 checkpoint blowout at 23g: curve r*=941 measured 1211+/-149 (nominal 211 outside). Drop 211 at slope ~1.7 (MPV18 measured 1.85 nearby) -> r*=815, predicted 970-1030."
+    },
     "1200": {
       "pBlunder": 0.323,
       "temperature": 4.733,
