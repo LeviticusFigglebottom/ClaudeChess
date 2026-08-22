@@ -74,11 +74,11 @@
       "extrapolated": true
     },
     "1000": {
-      "pBlunder": 0.33616736889060406,
-      "temperature": 4.86167368890604,
-      "formulaEquivalent": 941,
-      "segment": "d14",
-      "extrapolated": false
+      "pBlunder": 0.4,
+      "temperature": 6.2,
+      "formulaEquivalent": null,
+      "note": "iteration 3, bracketed bisection: T5.28 measured 1152+/-171, T7.5 swept 0/30 (<=~940) — the T response cliffs in between. T=6.2 (20wp tail weight 0.040).",
+      "segment": "d14"
     },
     "1200": {
       "pBlunder": 0.323,
