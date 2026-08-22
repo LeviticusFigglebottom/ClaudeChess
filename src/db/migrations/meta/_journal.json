@@ -134,6 +134,13 @@
       "when": 1787433705106,
       "tag": "0018_abnormal_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787435972349,
+      "tag": "0019_orange_hellion",
+      "breakpoints": true
     }
   ]
 }

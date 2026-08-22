@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { HomeBoard } from "./home-board";
+import { HomeClient } from "./home-client";
 
 const FEATURES = [
   {
@@ -36,6 +37,11 @@ const FEATURES = [
 ] as const;
 
 export default function Home() {
+  return <HomeClient marketing={<MarketingHome />} />;
+}
+
+/** Server-rendered guest landing (also the SSR shell before auth resolves). */
+function MarketingHome() {
   return (
     <div className="flex flex-col gap-12 py-4">
       <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_1fr]">

@@ -1,16 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { games, plies } from "@/db/schema";
+import { games, linkedAccounts, plies } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/lib/account/test-db";
 import type { AuthShape, UserRow } from "@/lib/account/types";
 import { ensureUser } from "@/lib/account/users";
 import {
+  lichessFriendMatches,
   linkAccount,
   listLinkedAccounts,
   runImportChunk,
   setAutoImport,
   unlinkAccount,
+  verifyLinkedAccount,
 } from "./importer";
 import type { FetchLike } from "./platforms";
 
@@ -122,8 +124,9 @@ const LICHESS_STREAM = `[Event "Rated blitz game"]
 
 function lichessFetch(): FetchLike {
   return async (url) => {
-    if (url.includes("/api/user/liuser") || url.includes("/api/user/liUser")) {
-      return Response.json({ id: "liuser" });
+    const userMatch = url.match(/\/api\/user\/([A-Za-z0-9_-]+)$/);
+    if (userMatch) {
+      return Response.json({ id: userMatch[1]!.toLowerCase() });
     }
     if (url.includes("/api/games/user/")) {
       return new Response(LICHESS_STREAM, { status: 200 });
@@ -214,5 +217,90 @@ describe("lichess import", () => {
     expect(row.opening).toBe("Scandinavian Defense");
     expect(row.pgn).toContain('[Site "https://lichess.org/aaaa1111"]');
     expect(row.pgn).not.toContain("bbbb2222");
+  });
+});
+
+describe("OAuth verification (Lichess)", () => {
+  it("verifies a fresh link and stores the follow list lowercased", async () => {
+    const auth: AuthShape = {
+      id: randomUUID(),
+      isAnonymous: false,
+      email: "oauth@example.com",
+      emailConfirmedAt: new Date().toISOString(),
+    };
+    const owner = (await ensureUser(t.db, auth, { desiredHandle: "oauth-owner" })).user;
+    const view = await verifyLinkedAccount(t.db, owner.id, "lichess", "OAuthUser", [
+      "FriendOne",
+      "friendTWO",
+    ]);
+    expect(view.verified).toBe(true);
+    expect(view.externalUsername).toBe("OAuthUser");
+    const row = (
+      await t.db
+        .select()
+        .from(linkedAccounts)
+        .where(eq(linkedAccounts.userId, owner.id))
+    )[0]!;
+    expect(row.lichessFollowing).toEqual(["friendone", "friendtwo"]);
+  });
+
+  it("keeps the import cursor when the OAuth handle matches (case-insensitively)", async () => {
+    const linked = await linkAccount(t.db, user.id, "lichess", "liUser", lichessFetch());
+    expect(linked.verified).toBe(false);
+    const cursor = new Date("2026-07-02T11:00:00.000Z");
+    await t.db
+      .update(linkedAccounts)
+      .set({ lastImportedAt: cursor })
+      .where(eq(linkedAccounts.userId, user.id));
+
+    const view = await verifyLinkedAccount(t.db, user.id, "lichess", "LIUSER");
+    expect(view.verified).toBe(true);
+    expect(view.externalUsername).toBe("LIUSER");
+    expect(view.lastImportedAt).toBe(cursor.toISOString());
+  });
+
+  it("resets the cursor when OAuth proves a DIFFERENT handle", async () => {
+    const view = await verifyLinkedAccount(t.db, user.id, "lichess", "SomeoneElse");
+    expect(view.verified).toBe(true);
+    expect(view.externalUsername).toBe("SomeoneElse");
+    expect(view.lastImportedAt).toBeNull();
+  });
+
+  it("manually re-typing a handle drops the verified badge", async () => {
+    const relinked = await linkAccount(t.db, user.id, "lichess", "liUser", lichessFetch());
+    expect(relinked.verified).toBe(false);
+  });
+
+  it("matches friends verified↔verified only", async () => {
+    const mk = async (handle: string) =>
+      (
+        await ensureUser(
+          t.db,
+          {
+            id: randomUUID(),
+            isAnonymous: false,
+            email: `${handle}@example.com`,
+            emailConfirmedAt: new Date().toISOString(),
+          },
+          { desiredHandle: handle }
+        )
+      ).user;
+    const me = await mk("match-me");
+    const friend = await mk("match-friend");
+    const imposter = await mk("match-imposter");
+
+    // I follow bob + carol on Lichess; friend VERIFIED as Bob, imposter
+    // merely CLAIMS carol (unverified) — only the verified one may match.
+    await verifyLinkedAccount(t.db, me.id, "lichess", "MeUser", ["bob", "carol"]);
+    await verifyLinkedAccount(t.db, friend.id, "lichess", "Bob");
+    await linkAccount(t.db, imposter.id, "lichess", "carol", lichessFetch());
+
+    const matches = await lichessFriendMatches(t.db, me.id);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]!.handle).toBe("match-friend");
+    expect(matches[0]!.lichessUsername).toBe("Bob");
+
+    // No verified own link → no matches, even with rows present.
+    expect(await lichessFriendMatches(t.db, imposter.id)).toEqual([]);
   });
 });

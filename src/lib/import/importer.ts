@@ -1,5 +1,5 @@
-import { and, eq } from "drizzle-orm";
-import { linkedAccounts } from "@/db/schema";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { linkedAccounts, users } from "@/db/schema";
 import { AccountError, type Db, type UserRow } from "@/lib/account/types";
 import { parseMultiPgn, replayPgnGame, variantFromHeader } from "@/lib/chess/pgn-read";
 import {
@@ -82,6 +82,111 @@ export async function linkAccount(
     })
     .returning();
   return toView(inserted[0]!);
+}
+
+/**
+ * OAuth-backed verification (Lichess only — chess.com offers no OAuth, so
+ * chess.com links can never be verified; the UI says so plainly). The OAuth
+ * flow proved control of `externalUsername`, so it OVERRIDES any manually
+ * typed handle for this source; the import cursor resets only when the
+ * handle actually changed (a different player's games). `following` is the
+ * user's Lichess follow list (follow:read), stored for friend matching —
+ * matched exclusively against OTHER users' VERIFIED lichess handles, never
+ * self-reported ones (impersonation guard, see the schema comment).
+ */
+export async function verifyLinkedAccount(
+  db: Db,
+  userId: string,
+  source: ImportSource,
+  externalUsername: string,
+  following?: string[]
+): Promise<LinkedAccountView> {
+  if (!USERNAME_RE.test(externalUsername)) {
+    throw new AccountError("bad_username", "That does not look like a platform username.");
+  }
+  const existing = (
+    await db
+      .select({ externalUsername: linkedAccounts.externalUsername })
+      .from(linkedAccounts)
+      .where(and(eq(linkedAccounts.userId, userId), eq(linkedAccounts.source, source)))
+  )[0];
+  const handleChanged =
+    existing !== undefined &&
+    existing.externalUsername.toLowerCase() !== externalUsername.toLowerCase();
+  const normalizedFollowing = following?.map((name) => name.toLowerCase());
+  const inserted = await db
+    .insert(linkedAccounts)
+    .values({
+      userId,
+      source,
+      externalUsername,
+      verifiedAt: new Date(),
+      lichessFollowing: normalizedFollowing ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [linkedAccounts.userId, linkedAccounts.source],
+      set: {
+        externalUsername,
+        verifiedAt: new Date(),
+        ...(handleChanged ? { lastImportedAt: null } : {}),
+        ...(normalizedFollowing ? { lichessFollowing: normalizedFollowing } : {}),
+      },
+    })
+    .returning();
+  return toView(inserted[0]!);
+}
+
+export interface LichessFriendMatch {
+  userId: string;
+  handle: string;
+  displayName: string | null;
+  lichessUsername: string;
+}
+
+/**
+ * GAMBIT users this user follows on Lichess: my stored follow list (from my
+ * own verified link) intersected with other users' VERIFIED lichess handles.
+ * Verified↔verified only, by construction — an unverified link never appears
+ * on either side, so nobody can plant a famous handle to harvest friends.
+ */
+export async function lichessFriendMatches(
+  db: Db,
+  userId: string
+): Promise<LichessFriendMatch[]> {
+  const mine = (
+    await db
+      .select({ following: linkedAccounts.lichessFollowing, verifiedAt: linkedAccounts.verifiedAt })
+      .from(linkedAccounts)
+      .where(and(eq(linkedAccounts.userId, userId), eq(linkedAccounts.source, "lichess")))
+  )[0];
+  if (!mine?.verifiedAt || !mine.following || mine.following.length === 0) return [];
+  const followingSet = new Set(mine.following.map((name) => name.toLowerCase()));
+  const rows = await db
+    .select({
+      userId: linkedAccounts.userId,
+      lichessUsername: linkedAccounts.externalUsername,
+      handle: users.handle,
+      displayName: users.displayName,
+      deletedAt: users.deletedAt,
+    })
+    .from(linkedAccounts)
+    .innerJoin(users, eq(users.id, linkedAccounts.userId))
+    .where(
+      and(
+        eq(linkedAccounts.source, "lichess"),
+        isNotNull(linkedAccounts.verifiedAt),
+        ne(linkedAccounts.userId, userId),
+        inArray(sql`lower(${linkedAccounts.externalUsername})`, [...followingSet])
+      )
+    );
+  return rows
+    .filter((row) => row.deletedAt === null)
+    .map((row) => ({
+      userId: row.userId,
+      handle: row.handle,
+      displayName: row.displayName,
+      lichessUsername: row.lichessUsername,
+    }));
 }
 
 export async function unlinkAccount(db: Db, userId: string, source: ImportSource): Promise<void> {

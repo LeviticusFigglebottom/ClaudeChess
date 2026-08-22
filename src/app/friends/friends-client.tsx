@@ -79,6 +79,36 @@ export function FriendsClient() {
           <h2 className="mb-3 text-base font-semibold text-paper">Friends</h2>
           <AddFriendForm onSubmit={(handle) => act(() => friendsApi.request(handle), "Request sent.")} />
 
+          {friends.lichessMatches?.length > 0 && (
+            <div className="mt-4 rounded-xl border border-edge bg-surface-2 p-3">
+              <p className="mb-1.5 text-xs uppercase tracking-wide text-text-faint">
+                From your Lichess follows
+              </p>
+              <p className="mb-2 text-xs text-text-faint">
+                Players you follow on Lichess who are on GAMBIT with a verified handle.
+              </p>
+              {friends.lichessMatches.map((match) => (
+                <Row
+                  key={match.userId}
+                  user={{
+                    id: match.userId,
+                    handle: match.handle,
+                    displayName: match.displayName,
+                    countryCode: null,
+                    title: null,
+                  }}
+                >
+                  <span className="notation text-xs text-text-faint">@{match.lichessUsername}</span>
+                  <SmallButton
+                    onClick={() => act(() => friendsApi.request(match.handle), "Request sent.")}
+                  >
+                    add friend
+                  </SmallButton>
+                </Row>
+              ))}
+            </div>
+          )}
+
           {friends.incoming.length > 0 && (
             <div className="mt-4">
               <p className="mb-1.5 text-xs uppercase tracking-wide text-text-faint">

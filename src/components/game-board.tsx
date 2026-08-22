@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { Chessboard } from "react-chessboard";
+import type { Arrow } from "react-chessboard/dist/chessboard/types";
 import { animationMs, boardColors } from "@/lib/prefs/prefs";
 import { customPiecesFor } from "./pieces";
 import { usePrefs } from "./prefs-context";
@@ -22,6 +23,7 @@ export function GameBoard({
   onMove,
   destsFrom,
   canSelect,
+  arrows,
 }: {
   boardId: string;
   fen: string;
@@ -31,6 +33,8 @@ export function GameBoard({
   onMove(from: string, to: string): boolean;
   destsFrom(square: string): string[];
   canSelect(square: string): boolean;
+  /** Review annotations (best move / played error) — [from, to, cssColor]. */
+  arrows?: { from: string; to: string; color: string }[];
 }) {
   const { prefs } = usePrefs();
   const [selected, setSelected] = useState<string | null>(null);
@@ -104,6 +108,7 @@ export function GameBoard({
       arePiecesDraggable={interactive}
       autoPromoteToQueen
       areArrowsAllowed
+      customArrows={arrows?.map((arrow) => [arrow.from, arrow.to, arrow.color] as Arrow)}
     />
   );
 }

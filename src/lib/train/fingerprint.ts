@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { blunderTags, games, plies } from "@/db/schema";
 import type { Db } from "@/lib/account/types";
 import { AccountError } from "@/lib/account/types";
@@ -283,7 +283,6 @@ export async function listErrorPlies(
       wpLoss: plies.wpLoss,
       fenBefore: plies.fenBefore,
       pv1: plies.pv1,
-      playedAt: games.playedAt,
     })
     .from(blunderTags)
     .innerJoin(plies, eq(blunderTags.plyId, plies.id))
@@ -298,7 +297,7 @@ export async function listErrorPlies(
     )
     .orderBy(desc(games.playedAt))
     .limit(limit);
-  return rows.map(({ playedAt: _unused, fenBefore, pv1, ...row }) => {
+  return rows.map(({ fenBefore, pv1, ...row }) => {
     const bestUci = ((pv1 as string[] | null) ?? [])[0] ?? null;
     let bestSan: string | null = null;
     if (bestUci) {
