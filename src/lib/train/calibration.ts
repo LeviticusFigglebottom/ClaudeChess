@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray, isNotNull, sql, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, sql, notInArray, gte } from "drizzle-orm";
+import { ANALYSIS_SETTINGS } from "@/lib/eval";
 import { calibrationAttempts, games, plies, ratings } from "@/db/schema";
 import type { Db } from "@/lib/account/types";
 import { AccountError } from "@/lib/account/types";
@@ -56,6 +57,8 @@ export async function nextCalibrationPosition(
         and(
           eq(games.userId, userId),
           eq(plies.degraded, false),
+        // Progressive depth: provisional (pass-1) plies are §9-excluded.
+        gte(plies.analyzedAtDepth, ANALYSIS_SETTINGS.review.depth),
           eq(games.variant, variant),
           isNotNull(plies.wpBefore),
           criticalOnly ? eq(plies.isCritical, true) : undefined,

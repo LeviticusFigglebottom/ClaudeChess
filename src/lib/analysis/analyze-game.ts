@@ -12,15 +12,16 @@ import {
   normalizeInfo,
   winProbFromEval,
   ANALYSIS_SETTINGS,
-  LOSS_THRESHOLDS,
   type Classification,
   type WhitePovEval,
 } from "@/lib/eval";
 import type { EngineInfo } from "@/lib/engine/types";
-import type { ServerAnalyzeResult } from "@/lib/engine/server";
 import type { AnalysisPool } from "./pool";
 import { searchWithWatchdog } from "./watchdog";
 import { wpFromWdl, type TablebaseClient, type TbResult } from "./tablebase";
+import { BAND_CLASSES, bandForLoss, needsVerify, VERIFY_RULES } from "./verify-rules";
+
+export { VERIFY_RULES } from "./verify-rules";
 
 /**
  * The Phase 2 batch pass (§4): populates every analysis field of `plies`.
@@ -60,7 +61,7 @@ export interface AnalyzeChunkResult {
 
 type PlyRow = typeof plies.$inferSelect;
 
-interface PositionEval {
+export interface PositionEval {
   infos: EngineInfo[];
   /** Mover-POV eval of the position (pv1), already tb-consulted when known. */
   wpMover: number;
@@ -80,7 +81,7 @@ function fenColor(fen: string): "w" | "b" {
  * and variant ends (third check delivered, KotH king centered) — the engine
  * must never be asked about a finished position.
  */
-function terminalEval(fen: string, variant: VariantId): PositionEval | null {
+export function terminalEval(fen: string, variant: VariantId): PositionEval | null {
   const position = GamePosition.fromFen(fen, variant);
   const outcome = position.outcome();
   if (outcome === "white" || outcome === "black") {
@@ -109,6 +110,38 @@ function terminalEval(fen: string, variant: VariantId): PositionEval | null {
   return null;
 }
 
+/**
+ * Derive a PositionEval from engine lines — the SINGLE place raw infos
+ * become wp/White-POV numbers, shared by the server search path and the
+ * client-batch ingest path (which supplies infos computed in the browser).
+ * Terminal positions are the caller's job (terminalEval first).
+ */
+export function positionEvalFromInfos(
+  fen: string,
+  infos: EngineInfo[],
+  tb: TbResult | null,
+  degraded: { reason: string; reachedDepth: number } | null
+): PositionEval {
+  const pv1 = infos[0];
+  if (!pv1) {
+    // No line at all — a fully failed search is a degraded ply, not a fake
+    // draw eval that silently corrupts every trainer downstream.
+    return {
+      infos: [],
+      wpMover: 50,
+      whitePov: { cp: 0, mateIn: null },
+      tb,
+      terminal: null,
+      degraded: degraded ?? { reason: "engine produced no line", reachedDepth: 0 },
+    };
+  }
+  const mover = fenColor(fen);
+  const whitePov = normalizeInfo(pv1, mover);
+  const wpMover =
+    tb !== null ? wpFromWdl(tb.wdl) : winProbFromEval(forColor(whitePov, mover));
+  return { infos, wpMover, whitePov, tb, terminal: null, degraded };
+}
+
 async function evaluatePosition(
   fen: string,
   startFen: string,
@@ -131,24 +164,7 @@ async function evaluatePosition(
   const degradedInfo = degraded
     ? { reason: degraded.reason, reachedDepth: degraded.reachedDepth }
     : null;
-  const pv1 = result.infos[0];
-  if (!pv1) {
-    // No line at all — a fully failed search is a degraded ply, not a fake
-    // draw eval that silently corrupts every trainer downstream.
-    return {
-      infos: [],
-      wpMover: 50,
-      whitePov: { cp: 0, mateIn: null },
-      tb,
-      terminal: null,
-      degraded: degradedInfo ?? { reason: "engine produced no line", reachedDepth: 0 },
-    };
-  }
-  const mover = fenColor(fen);
-  const whitePov = normalizeInfo(pv1, mover);
-  const wpMover =
-    tb !== null ? wpFromWdl(tb.wdl) : winProbFromEval(forColor(whitePov, mover));
-  return { infos: result.infos, wpMover, whitePov, tb, terminal: null, degraded: degradedInfo };
+  return positionEvalFromInfos(fen, result.infos, tb, degradedInfo);
 }
 
 /** Sum of capturable material on distinct target squares (§9.3 criterion c). */
@@ -220,7 +236,13 @@ export async function analyzeGameChunk(
   }
 
   const firstUnanalyzed = rows.findIndex(
-    (row) => row.evalBeforeCp === null && row.mateBefore === null
+    (row) =>
+      (row.evalBeforeCp === null && row.mateBefore === null) ||
+      // Progressive depth: a PROVISIONAL ply (client pass 1, depth < review
+      // depth) counts as unanalyzed for the server path — the fallback
+      // refines it to full depth rather than letting a d12 number stand.
+      // Degraded plies stay terminal (§3.3): the ladder already concluded.
+      (!row.degraded && (row.analyzedAtDepth ?? 0) < ANALYSIS_SETTINGS.review.depth)
   );
   if (firstUnanalyzed === -1) {
     const verify = await verifyBorderline(db, gameId, opts, {
@@ -301,7 +323,7 @@ export async function analyzeGameChunk(
   };
 }
 
-async function writePlyRecord(
+export async function writePlyRecord(
   db: Db,
   game: typeof games.$inferSelect,
   row: PlyRow,
@@ -449,39 +471,83 @@ async function writePlyRecord(
  * and their loss re-derived — refinement moves plies in BOTH directions, so
  * this is a measurement improvement, not a threshold nudge.
  */
-export const VERIFY_RULES = {
-  depth: 24,
-  /**
-   * Loss window around the 10 (MISTAKE) and 15 (BLUNDER) boundaries.
-   * Reaches down to 5 so the INACCURACY band feeding the mistake boundary
-   * is refined too — d18's small systematic softness parks real mistakes
-   * at loss 6–9 the same way it parked blunders at 12–15.
-   */
-  lossMin: 5,
-  lossMax: 18,
-} as const;
+/**
+ * Apply one verified position pair to its ply and refresh the shared
+ * neighbours — the update rules of the §4.2 verify pass, extracted so the
+ * server loop (verifyBorderline) and the client-batch ingest path apply
+ * IDENTICAL semantics: only band classes reclassify by loss, neighbours
+ * stay on the one-eval-per-position chain, analyzedAtDepth records the
+ * verify depth.
+ */
+export async function applyVerifyPair(
+  db: Db,
+  gameId: string,
+  rows: PlyRow[],
+  row: PlyRow,
+  before: PositionEval,
+  after: PositionEval
+): Promise<void> {
+  const wpBefore = before.wpMover;
+  const wpAfter = 100 - after.wpMover;
+  const loss = wpBefore - wpAfter;
+  const cls = row.classification as Classification | null;
+  await db
+    .update(plies)
+    .set({
+      evalBeforeCp: before.whitePov.cp,
+      evalAfterCp: after.whitePov.cp,
+      mateBefore: before.whitePov.mateIn,
+      mateAfter: after.whitePov.mateIn,
+      wpBefore,
+      wpAfter,
+      wpLoss: loss,
+      classification: cls !== null && BAND_CLASSES.includes(cls) ? bandForLoss(loss) : cls,
+      analyzedAtDepth: VERIFY_RULES.depth,
+    })
+    .where(and(eq(plies.gameId, gameId), eq(plies.ply, row.ply)));
 
-const BAND_CLASSES: Classification[] = ["EXCELLENT", "GOOD", "INACCURACY", "MISTAKE", "BLUNDER"];
-
-function bandForLoss(loss: number): Classification {
-  if (loss < LOSS_THRESHOLDS.excellent) return "EXCELLENT";
-  if (loss < LOSS_THRESHOLDS.good) return "GOOD";
-  if (loss < LOSS_THRESHOLDS.inaccuracy) return "INACCURACY";
-  if (loss < LOSS_THRESHOLDS.mistake) return "MISTAKE";
-  return "BLUNDER";
-}
-
-function needsVerify(row: PlyRow): boolean {
-  if (row.wpLoss === null) return false;
-  if ((row.analyzedAtDepth ?? 0) >= VERIFY_RULES.depth) return false;
-  if (row.wpLoss < VERIFY_RULES.lossMin || row.wpLoss > VERIFY_RULES.lossMax) return false;
-  // Only classes whose meaning rides on the loss measurement: the loss
-  // bands and MISS (which folds by loss). BOOK/BEST/GREAT/BRILLIANT are
-  // decided by other evidence and stay as analyzed.
-  const cls = row.classification;
-  return (
-    cls === "INACCURACY" || cls === "MISTAKE" || cls === "BLUNDER" || cls === "MISS"
-  );
+  // Keep the one-eval-per-position chain consistent: the two refreshed
+  // positions are shared with the neighbouring plies.
+  const prev = rows[row.ply - 2];
+  if (prev) {
+    const prevWpAfter = 100 - before.wpMover;
+    const prevLoss = prev.wpBefore! - prevWpAfter;
+    const prevCls = prev.classification as Classification | null;
+    await db
+      .update(plies)
+      .set({
+        evalAfterCp: before.whitePov.cp,
+        mateAfter: before.whitePov.mateIn,
+        wpAfter: prevWpAfter,
+        wpLoss: prevLoss,
+        classification:
+          prevCls !== null && BAND_CLASSES.includes(prevCls) ? bandForLoss(prevLoss) : prevCls,
+      })
+      .where(and(eq(plies.gameId, gameId), eq(plies.ply, prev.ply)));
+    prev.wpAfter = prevWpAfter;
+    prev.wpLoss = prevLoss;
+  }
+  const next = rows[row.ply];
+  if (next) {
+    const nextWpBefore = 100 - wpAfter;
+    const nextLoss = nextWpBefore - next.wpAfter!;
+    const nextCls = next.classification as Classification | null;
+    await db
+      .update(plies)
+      .set({
+        evalBeforeCp: after.whitePov.cp,
+        mateBefore: after.whitePov.mateIn,
+        wpBefore: nextWpBefore,
+        wpLoss: nextLoss,
+        classification:
+          nextCls !== null && BAND_CLASSES.includes(nextCls) ? bandForLoss(nextLoss) : nextCls,
+      })
+      .where(and(eq(plies.gameId, gameId), eq(plies.ply, next.ply)));
+    next.wpBefore = nextWpBefore;
+    next.wpLoss = nextLoss;
+  }
+  row.wpLoss = loss;
+  row.analyzedAtDepth = VERIFY_RULES.depth;
 }
 
 /**
@@ -556,68 +622,8 @@ export async function verifyBorderline(
       // may retry it on a later pass).
       continue;
     }
-    const wpBefore = before.wpMover;
-    const wpAfter = 100 - after.wpMover;
-    const loss = wpBefore - wpAfter;
-    const cls = row.classification as Classification | null;
-    await db
-      .update(plies)
-      .set({
-        evalBeforeCp: before.whitePov.cp,
-        evalAfterCp: after.whitePov.cp,
-        mateBefore: before.whitePov.mateIn,
-        mateAfter: after.whitePov.mateIn,
-        wpBefore,
-        wpAfter,
-        wpLoss: loss,
-        classification: cls !== null && BAND_CLASSES.includes(cls) ? bandForLoss(loss) : cls,
-        analyzedAtDepth: VERIFY_RULES.depth,
-      })
-      .where(and(eq(plies.gameId, gameId), eq(plies.ply, row.ply)));
+    await applyVerifyPair(db, gameId, rows, row, before, after);
     refined++;
-
-    // Keep the one-eval-per-position chain consistent: the two refreshed
-    // positions are shared with the neighbouring plies.
-    const prev = rows[row.ply - 2];
-    if (prev) {
-      const prevWpAfter = 100 - before.wpMover;
-      const prevLoss = prev.wpBefore! - prevWpAfter;
-      const prevCls = prev.classification as Classification | null;
-      await db
-        .update(plies)
-        .set({
-          evalAfterCp: before.whitePov.cp,
-          mateAfter: before.whitePov.mateIn,
-          wpAfter: prevWpAfter,
-          wpLoss: prevLoss,
-          classification:
-            prevCls !== null && BAND_CLASSES.includes(prevCls) ? bandForLoss(prevLoss) : prevCls,
-        })
-        .where(and(eq(plies.gameId, gameId), eq(plies.ply, prev.ply)));
-      prev.wpAfter = prevWpAfter;
-      prev.wpLoss = prevLoss;
-    }
-    const next = rows[row.ply];
-    if (next) {
-      const nextWpBefore = 100 - wpAfter;
-      const nextLoss = nextWpBefore - next.wpAfter!;
-      const nextCls = next.classification as Classification | null;
-      await db
-        .update(plies)
-        .set({
-          evalBeforeCp: after.whitePov.cp,
-          mateBefore: after.whitePov.mateIn,
-          wpBefore: nextWpBefore,
-          wpLoss: nextLoss,
-          classification:
-            nextCls !== null && BAND_CLASSES.includes(nextCls) ? bandForLoss(nextLoss) : nextCls,
-        })
-        .where(and(eq(plies.gameId, gameId), eq(plies.ply, next.ply)));
-      next.wpBefore = nextWpBefore;
-      next.wpLoss = nextLoss;
-    }
-    row.wpLoss = loss;
-    row.analyzedAtDepth = VERIFY_RULES.depth;
   }
 
   const remaining = rows.filter((row) => needsVerify(row)).length;

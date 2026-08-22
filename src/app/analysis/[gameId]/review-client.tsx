@@ -10,10 +10,16 @@ import { usePrefs } from "@/components/prefs-context";
 import { Ribbon, RibbonStrip } from "@/components/ribbon";
 import { useFlag } from "@/components/use-flag";
 import { ApiError } from "@/lib/account/client";
+import {
+  clientBatchCapability,
+  runClientBatchAnalysis,
+  type BatchProgress,
+} from "@/lib/analysis/client-batch";
+import { isProvisional } from "@/lib/analysis/verify-rules";
 import { GamePosition } from "@/lib/chess/position";
 import type { VariantId } from "@/lib/chess/variant";
 import { START_FEN } from "@/lib/chess/fen";
-import type { Classification } from "@/lib/eval";
+import { ANALYSIS_SETTINGS, type Classification } from "@/lib/eval";
 
 /**
  * The review page (Phase 2 §8): board + eval bar (the B2 ribbon), move list
@@ -55,6 +61,8 @@ interface PlyPayload {
   /** §3.3 watchdog: analysis completed only at reduced settings. */
   degraded: boolean;
   degradedDepth: number | null;
+  /** Depth this ply's record was analyzed at (progressive: 12 → 18 → 24). */
+  analyzedAtDepth: number | null;
   tbHit: boolean;
   tags: TagPayload[];
 }
@@ -90,6 +98,9 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState<{ analyzed: number; total: number } | null>(null);
   const [verifying, setVerifying] = useState(0);
+  const [clientPhase, setClientPhase] = useState<BatchProgress | null>(null);
+  const [fallbackNote, setFallbackNote] = useState<string | null>(null);
+  const autoResumedRef = useRef(false);
   const liveRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(() => {
@@ -109,8 +120,8 @@ export function ReviewClient({ gameId }: { gameId: string }) {
     if (auth.status === "ready") load();
   }, [auth.status, load]);
 
-  const analyze = useCallback(async () => {
-    setAnalyzing(true);
+  /** Server-side fallback: the chunked /api/analyze loop. */
+  const serverAnalyze = useCallback(async () => {
     try {
       let retried = false;
       let stalled = 0;
@@ -159,11 +170,61 @@ export function ReviewClient({ gameId }: { gameId: string }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed.");
     } finally {
-      setAnalyzing(false);
       setProgress(null);
       setVerifying(0);
     }
   }, [gameId, load]);
+
+  /**
+   * Client-first analysis (§3.3 revision): the browser's multi-threaded
+   * engine does the searching where capability allows — several times
+   * faster than the 1-vCPU serverless fallback — streaming results to the
+   * server per position. Capability detection, not a user setting.
+   */
+  const analyze = useCallback(async () => {
+    setAnalyzing(true);
+    setError(null);
+    setFallbackNote(null);
+    try {
+      const capability = clientBatchCapability();
+      if (capability.ok) {
+        const result = await runClientBatchAnalysis(
+          gameId,
+          (phaseProgress) => setClientPhase(phaseProgress),
+          () => load() // each pass completion lands visible results
+        );
+        setClientPhase(null);
+        if (result.ok) {
+          load();
+          return;
+        }
+        setFallbackNote(`client analysis stopped (${result.error}) — finishing on the server`);
+      } else {
+        setFallbackNote(`server analysis (${capability.reason})`);
+      }
+      await serverAnalyze();
+    } finally {
+      setAnalyzing(false);
+      setClientPhase(null);
+    }
+  }, [gameId, load, serverAnalyze]);
+
+  // Resume interrupted analysis automatically: partially-analyzed games
+  // (a closed tab mid-run) pick up where they stopped, once per page view.
+  useEffect(() => {
+    if (!data || analyzing || autoResumedRef.current) return;
+    const someAnalyzed = data.plies.some((ply) => ply.classification !== null);
+    const incomplete = data.plies.some(
+      (ply) =>
+        !ply.degraded &&
+        ((ply.classification === null && ply.wpBefore === null) ||
+          (ply.analyzedAtDepth ?? 0) < ANALYSIS_SETTINGS.review.depth)
+    );
+    if (someAnalyzed && incomplete) {
+      autoResumedRef.current = true;
+      void analyze();
+    }
+  }, [data, analyzing, analyze]);
 
   // Keyboard navigation (A3.7).
   useEffect(() => {
@@ -242,10 +303,31 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   }
 
   const { game, accuracy } = data;
-  const analyzed = data.plies.length > 0 && data.plies.every((ply) => ply.wpBefore !== null);
+  const hasEvals = data.plies.length > 0 && data.plies.every((ply) => ply.wpBefore !== null);
+  const reviewComplete =
+    hasEvals &&
+    data.plies.every(
+      (ply) => ply.degraded || (ply.analyzedAtDepth ?? 0) >= ANALYSIS_SETTINGS.review.depth
+    );
+  const provisionalCount = data.plies.filter((ply) => isProvisional(ply)).length;
   const keyMoments = data.plies.filter(
     (ply) => ply.classification && KEY_CLASSES.includes(ply.classification)
   );
+
+  const phaseLabel = (phase: BatchProgress): string => {
+    switch (phase.phase) {
+      case "boot":
+        return "starting the engine…";
+      case "pass1":
+        return `quick pass (depth ${ANALYSIS_SETTINGS.provisional.depth}) — ${phase.done}/${phase.total} positions`;
+      case "pass2":
+        return `refining to depth ${ANALYSIS_SETTINGS.review.depth} — ${phase.done}/${phase.total} positions`;
+      case "pass3":
+        return `verifying ${phase.total} borderline ${phase.total === 1 ? "eval" : "evals"} at depth 24 — ${phase.done}/${phase.total}`;
+      case "finalize":
+        return "computing motifs and critical moments…";
+    }
+  };
 
   return (
     <Shell gameId={gameId}>
@@ -268,17 +350,33 @@ export function ReviewClient({ gameId }: { gameId: string }) {
         )}
       </header>
 
-      {!analyzed && (
+      {(!reviewComplete || analyzing) && (
         <div className="card mb-4 flex items-center gap-3 p-3">
           <button
             onClick={() => void analyze()}
             disabled={analyzing}
             className="btn-primary px-4 py-1.5 text-sm"
           >
-            {analyzing ? "Analyzing…" : "Analyze game"}
+            {analyzing ? "Analyzing…" : provisionalCount > 0 ? "Finish analysis" : "Analyze game"}
           </button>
           <div className="min-w-0 flex-1">
-            {progress ? (
+            {clientPhase ? (
+              <>
+                <div className="h-1.5 overflow-hidden rounded-full bg-raise">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${(clientPhase.done / Math.max(1, clientPhase.total)) * 100}%`,
+                      background: "var(--accent)",
+                      transition: "width var(--motion-eval) ease-out",
+                    }}
+                  />
+                </div>
+                <p className="notation mt-1 text-xs text-text-faint">
+                  analyzing in your browser · {phaseLabel(clientPhase)}
+                </p>
+              </>
+            ) : progress ? (
               <>
                 <div className="h-1.5 overflow-hidden rounded-full bg-raise">
                   <div
@@ -298,12 +396,22 @@ export function ReviewClient({ gameId }: { gameId: string }) {
               </>
             ) : (
               <p className="text-xs text-text-faint">
-                Depth-18 review of every position — evals, classifications, critical
-                moments, and blunder mechanisms.
+                {fallbackNote ??
+                  "Full review of every position — runs in your browser where supported, with provisional results in seconds."}
               </p>
             )}
           </div>
         </div>
+      )}
+
+      {provisionalCount > 0 && (
+        <p className="mb-4 rounded-lg border border-warn-1/40 bg-surface px-3 py-2 text-xs text-text-dim">
+          Provisional review at depth {ANALYSIS_SETTINGS.provisional.depth} on {provisionalCount}{" "}
+          {provisionalCount === 1 ? "ply" : "plies"} — being refined to depth{" "}
+          {ANALYSIS_SETTINGS.review.depth}
+          {analyzing ? "…" : " when analysis resumes."} Provisional plies are excluded from
+          trainer statistics.
+        </p>
       )}
 
       <div className="flex flex-col gap-4 lg:flex-row">
@@ -359,7 +467,7 @@ export function ReviewClient({ gameId }: { gameId: string }) {
         </div>
       </div>
 
-      {analyzed && (
+      {hasEvals && (
         <div className="mt-5">
           <RibbonStrip
             entries={stripEntries}
@@ -652,6 +760,14 @@ function PlyDetail({ ply, variant }: { ply: PlyPayload; variant: VariantId }) {
             title="The engine search for this position exceeded its budget; the eval shown is from a reduced search and this ply is excluded from trainer statistics."
           >
             incomplete{ply.degradedDepth ? ` (d${ply.degradedDepth})` : ""}
+          </span>
+        )}
+        {isProvisional(ply) && (
+          <span
+            className="text-xs text-warn-1"
+            title={`Analyzed at depth ${ply.analyzedAtDepth} on the quick first pass; being refined to depth ${ANALYSIS_SETTINGS.review.depth}. Excluded from trainer statistics until then.`}
+          >
+            provisional (d{ply.analyzedAtDepth})
           </span>
         )}
         {ply.tbHit && <span className="text-xs text-brilliant">tablebase</span>}

@@ -3,7 +3,8 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { blunderTags, games, plies } from "@/db/schema";
 import { handleApi, requireUser } from "@/lib/account/api";
 import { AccountError } from "@/lib/account/types";
-import { gameAccuracy, moveAccuracy, volatilityWeights } from "@/lib/eval";
+import { ANALYSIS_SETTINGS, gameAccuracy, moveAccuracy, volatilityWeights } from "@/lib/eval";
+import { materializePliesFromPgn } from "@/lib/analysis/analyze-game";
 
 /**
  * GET /api/games/[id] — the full review payload: game meta, every ply's
@@ -20,6 +21,9 @@ export async function GET(
     if (!game || game.userId !== user.id) {
       throw new AccountError("game_missing", "No such game.", 404);
     }
+    // Lazy materialization (bot games are archived as PGN only): the review
+    // payload — and the client-batch driver reading it — always sees rows.
+    await materializePliesFromPgn(db, id);
     const plyRows = await db
       .select()
       .from(plies)
@@ -43,7 +47,14 @@ export async function GET(
       white: null,
       black: null,
     };
-    if (analyzed.length > 0 && analyzed.length === plyRows.length) {
+    // Accuracy only over a COMPLETE review-depth record: provisional
+    // (pass-1) numbers never stand in for depth-18 ones. Degraded plies are
+    // §3.3-terminal and keep today's inclusion (their partial evals are the
+    // honest best available and the game stays reviewable).
+    const reviewComplete = plyRows.every(
+      (row) => row.degraded || (row.analyzedAtDepth ?? 0) >= ANALYSIS_SETTINGS.review.depth
+    );
+    if (analyzed.length > 0 && analyzed.length === plyRows.length && reviewComplete) {
       const whiteSeries = plyRows.map((row) =>
         row.color === "white" ? row.wpBefore! : 100 - row.wpBefore!
       );
@@ -109,6 +120,7 @@ export async function GET(
         isCritical: row.isCritical,
         degraded: row.degraded,
         degradedDepth: row.degraded ? row.analyzedAtDepth : null,
+        analyzedAtDepth: row.analyzedAtDepth,
         tbHit: row.tbHit,
         tbWdl: row.tbWdl,
         tags: (tagsByPly.get(row.id) ?? [])

@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, gte } from "drizzle-orm";
+import { ANALYSIS_SETTINGS } from "@/lib/eval";
 import { games, plies, postmortemResponses } from "@/db/schema";
 import type { Db } from "@/lib/account/types";
 import { AccountError } from "@/lib/account/types";
@@ -49,7 +50,9 @@ export async function postmortemPrompts(
       wpLoss: plies.wpLoss,
     })
     .from(plies)
-    .where(and(eq(plies.gameId, gameId), eq(plies.isCritical, true), eq(plies.degraded, false)))
+    .where(and(eq(plies.gameId, gameId), eq(plies.isCritical, true), eq(plies.degraded, false),
+        // Progressive depth: provisional (pass-1) plies are §9-excluded.
+        gte(plies.analyzedAtDepth, ANALYSIS_SETTINGS.review.depth)))
     .orderBy(asc(plies.ply));
   // The user's own critical moves, biggest stakes first, capped at 5.
   const own = rows

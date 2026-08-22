@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, or, sql, gte } from "drizzle-orm";
+import { ANALYSIS_SETTINGS } from "@/lib/eval";
 import { games, plies, repertoireNodes } from "@/db/schema";
 import type { Db } from "@/lib/account/types";
 import { AccountError } from "@/lib/account/types";
@@ -396,6 +397,8 @@ export async function computeLeaks(
       and(
         eq(games.userId, userId),
         eq(plies.degraded, false),
+        // Progressive depth: provisional (pass-1) plies are §9-excluded.
+        gte(plies.analyzedAtDepth, ANALYSIS_SETTINGS.review.depth),
         eq(games.variant, "standard"),
         eq(games.userColor, color),
         eq(plies.color, color),

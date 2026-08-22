@@ -144,14 +144,24 @@ async function main() {
   gzip.pipe(sink);
   let written = 0;
   const source = URL_SOURCE ? URL_SOURCE.split("/").pop()!.replace(".pgn.zst", "") : DUMP.split("/").pop()!.replace(".pgn.zst", "");
-  // First line: seed metadata — the source month is recorded so staleness
-  // is visible, and the version string drives the seed guard.
+  // Sampling method, derived: hitting --max-games means the input was cut
+  // off mid-month — a CHRONOLOGICAL PREFIX (the month's first hours,
+  // timezone-skewed), NOT a random sample. Stamped so it is never read
+  // later as random.
+  const sampling =
+    used >= MAX_GAMES
+      ? `chronological-prefix (first ${used} games of the month — not a random sample; skewed toward the month's first hours)`
+      : "complete-dump";
+  // First line: seed metadata — the source month and sampling method are
+  // recorded so staleness and method are visible, and the version string
+  // drives the seed guard.
   gzip.write(
     JSON.stringify({
       meta: {
         source,
         gamesUsed: used,
         minGames: MIN_GAMES,
+        sampling,
         builtAt: new Date().toISOString().slice(0, 10),
         version: `${source}:min${MIN_GAMES}`,
       },
