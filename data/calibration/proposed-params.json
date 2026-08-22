@@ -117,11 +117,12 @@
       "method": "second bisection: full-150 at r*=1403 measured 2090+/-57 (missed the +/-75 gate by +90 after the 20-game checkpoint read +35). Same-shape points r1403=2090+/-57, r1470=2269+/-200, r1531=2512+/-349 give local slope ~2.9 Elo/r; 1403 - 90/2.9 = 1372. Slope range 2.0-3.3 lands 1988-2028 either way."
     },
     "2200": {
-      "pBlunder": 0.09850889233369109,
-      "temperature": 2.4850889233369107,
-      "formulaEquivalent": 1654,
+      "pBlunder": 0.185,
+      "temperature": 3.35,
+      "formulaEquivalent": 1395,
+      "note": "iteration 2: r1480 probed 2368+/-171 (nominal inside CI by 3 but point estimate +168 — the 2000 precedent says such checkpoints resolve hot at full sample). Measured MPV8 same-shape slope (1480,2368)-(1654,2636) = 1.54 Elo/r; 1480 - 168/1.54*1.4 rounding lands r*=1395; predicted 2155-2237 across slope range 1.5-2.5.",
       "segment": "d18",
-      "extrapolated": false
+      "extrapolated": true
     }
   }
 }
