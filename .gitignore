@@ -20,3 +20,7 @@ next-env.d.ts
 *.tsbuildinfo
 .DS_Store
 /.vercel
+data/puzzles-raw/
+data/gate-burn.log
+data/review-screenshot.png
+.env.local

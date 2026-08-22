@@ -75,10 +75,21 @@ function supabaseConfigured(): boolean {
   );
 }
 
+/** Dev-auth harness (see src/lib/account/api.ts): cookie identity, no Supabase. */
+function devAuthEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_GAMBIT_DEV_AUTH === "1";
+}
+
+function ensureDevCookie(): void {
+  if (!document.cookie.includes("gambit-dev-user=")) {
+    document.cookie = `gambit-dev-user=${crypto.randomUUID()}; path=/; max-age=31536000; samesite=lax`;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { prefs, update } = usePrefs();
   const [status, setStatus] = useState<AuthStatus>(
-    supabaseConfigured() ? "connecting" : "disabled"
+    supabaseConfigured() || devAuthEnabled() ? "connecting" : "disabled"
   );
   const [profile, setProfile] = useState<OwnProfile | null>(null);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
@@ -143,6 +154,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [getSupabase, update]);
 
   const connect = useCallback(async () => {
+    if (devAuthEnabled()) {
+      ensureDevCookie();
+      await bootstrap();
+      return;
+    }
     const supabase = getSupabase();
     if (!supabase) {
       setStatus("disabled");

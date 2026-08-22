@@ -331,7 +331,11 @@ export async function listGames(
       timeControl: games.timeControl,
       eco: games.eco,
       opening: games.opening,
+      isStudy: games.isStudy,
       playedAt: games.playedAt,
+      plyCount: sql<number>`(select count(*)::int from plies p where p.game_id = games.id)`,
+      analyzedCount: sql<number>`(select count(*)::int from plies p where p.game_id = games.id and p.wp_before is not null)`,
+      errorCount: sql<number>`(select count(*)::int from plies p where p.game_id = games.id and p.classification in ('MISTAKE','BLUNDER','MISS') and p.color = games.user_color)`,
     })
     .from(games)
     .where(eq(games.userId, userId))

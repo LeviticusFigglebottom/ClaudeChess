@@ -10,7 +10,20 @@ import { ensureUser, recoverableUntil } from "./users";
  * sibling modules (testable against PGlite); everything here is glue.
  */
 
+/**
+ * Dev-auth (gate harness): with GAMBIT_DEV_AUTH=1 and a DATABASE_URL, the
+ * session identity comes from a client-held cookie instead of Supabase — a
+ * verified permanent user per cookie. This exists so the machine-verified
+ * gates (review flows, the Phase 4 two-browser Playwright run) exercise the
+ * REAL routes and DB without an external auth service. Never enabled unless
+ * explicitly set; produces nothing in production deployments.
+ */
+export function devAuthEnabled(): boolean {
+  return process.env.GAMBIT_DEV_AUTH === "1" && Boolean(process.env.DATABASE_URL);
+}
+
 export function accountsConfigured(): boolean {
+  if (devAuthEnabled()) return true;
   return Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
@@ -18,8 +31,22 @@ export function accountsConfigured(): boolean {
   );
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getAuthShape(): Promise<AuthShape | null> {
   if (!accountsConfigured()) return null;
+  if (devAuthEnabled()) {
+    const { cookies } = await import("next/headers");
+    const store = await cookies();
+    const id = store.get("gambit-dev-user")?.value;
+    if (!id || !UUID_RE.test(id)) return null;
+    return {
+      id: id.toLowerCase(),
+      isAnonymous: false,
+      email: `${id.slice(0, 8)}@dev.local`,
+      emailConfirmedAt: new Date(0).toISOString(),
+    };
+  }
   const supabase = await createClient();
   const {
     data: { user },

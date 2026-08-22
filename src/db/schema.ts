@@ -226,6 +226,8 @@ export const games = pgTable(
     timeControl: text("time_control"),
     eco: text("eco"),
     opening: text("opening"),
+    /** A3.1 studies: free-form analysis saved from the analysis board. */
+    isStudy: boolean("is_study").notNull().default(false),
     playedAt: timestamp("played_at", { withTimezone: true }),
     importedAt: timestamp("imported_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -234,6 +236,57 @@ export const games = pgTable(
     uniqueIndex("games_source_external_idx").on(table.userId, table.source, table.externalId),
   ]
 );
+
+// --- Import (Phase 2, C1) ---
+
+/**
+ * Per-user linked platform accounts (kickoff Phase 2): import is a product
+ * feature — each user connects their own chess.com / Lichess handle. No
+ * username is ever hardcoded or build-time configured. `verifiedAt` stays
+ * null until a platform offers an ownership check (neither does today
+ * without OAuth) — imported games are labeled unverified in the UI.
+ */
+export const linkedAccounts = pgTable(
+  "linked_accounts",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** 'chesscom' | 'lichess' (subset of game_source). */
+    source: gameSourceEnum("source").notNull(),
+    externalUsername: text("external_username").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    /** playedAt upper bound of already-imported games — the incremental cursor. */
+    lastImportedAt: timestamp("last_imported_at", { withTimezone: true }),
+    /** Weekly auto-import via cron (C1: polling only; hourly would be abusive). */
+    autoImport: boolean("auto_import").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.source] })]
+);
+
+/**
+ * Syzygy probe cache (B0.1): tablebase.lichess.ovh responses keyed by epd.
+ * Shared across users — tablebase truth is user-independent.
+ */
+export const tbCache = pgTable("tb_cache", {
+  /** epd (board, turn, castling, ep) of the probed position. */
+  fenKey: text("fen_key").primaryKey(),
+  /** Side-to-move WDL −2..2; null when the probe returned unknown. */
+  wdl: smallint("wdl"),
+  dtz: integer("dtz"),
+  probedAt: timestamp("probed_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Lichess opening-explorer proxy cache (Phase 3, 24h TTL). Key encodes the
+ * full query (fen + variant + speeds + ratings).
+ */
+export const explorerCache = pgTable("explorer_cache", {
+  key: text("key").primaryKey(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const plies = pgTable(
   "plies",
@@ -303,6 +356,14 @@ export const plies = pgTable(
   ]
 );
 
+/**
+ * Motif tags (C2.4): one row per fired motif per ply, ranked by evidence
+ * class then confidence — real blunders are frequently two things at once.
+ * Detection is deterministic (C2); `evidence` carries the squares and PV
+ * indices that triggered the detector (C3 renders them). `explanation` is
+ * the optional LLM prose over that proven evidence (C5) — null until the
+ * cached explanation call happens; never load-bearing.
+ */
 export const blunderTags = pgTable(
   "blunder_tags",
   {
@@ -311,14 +372,22 @@ export const blunderTags = pgTable(
       .notNull()
       .references(() => plies.id, { onDelete: "cascade" }),
     motif: blunderMotifEnum("motif").notNull(),
+    /** Retained for compatibility; rank ordering is authoritative (C2.4). */
     secondaryMotif: blunderMotifEnum("secondary_motif"),
+    /** 1 = top motif; every fired motif ≥ 0.6 gets a row. */
+    rank: integer("rank").notNull().default(1),
     confidence: real("confidence").notNull(),
-    explanation: text("explanation").notNull(),
-    /** Model identifier that produced the tag, for auditing agreement rates. */
+    /** Detector evidence: squares, PV indices, deltas — the C3 chain input. */
+    evidence: jsonb("evidence").$type<Record<string, unknown>>(),
+    explanation: text("explanation"),
+    /** Producer id: 'gambit-detectors-v1' for C2, a model id for C5 prose. */
     model: text("model").notNull(),
     taggedAt: timestamp("tagged_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("blunder_tags_motif_idx").on(table.motif)]
+  (table) => [
+    index("blunder_tags_motif_idx").on(table.motif),
+    uniqueIndex("blunder_tags_ply_motif_idx").on(table.plyId, table.motif),
+  ]
 );
 
 export const calibrationAttempts = pgTable(
