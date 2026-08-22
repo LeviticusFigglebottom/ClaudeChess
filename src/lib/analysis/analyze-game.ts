@@ -12,6 +12,7 @@ import {
   normalizeInfo,
   winProbFromEval,
   ANALYSIS_SETTINGS,
+  LOSS_THRESHOLDS,
   type Classification,
   type WhitePovEval,
 } from "@/lib/eval";
@@ -64,29 +65,34 @@ interface PositionEval {
   wpMover: number;
   whitePov: WhitePovEval;
   tb: TbResult | null;
-  terminal: "checkmate" | "stalemate" | "draw" | null;
+  terminal: "checkmate" | "stalemate" | "draw" | "variant-end" | null;
 }
 
 function fenColor(fen: string): "w" | "b" {
   return (fen.split(" ")[1] ?? "w") === "w" ? "w" : "b";
 }
 
-/** Terminal-position eval without an engine (mate/stalemate/dead draws). */
+/**
+ * Terminal-position eval without an engine: mate, stalemate, dead draws,
+ * and variant ends (third check delivered, KotH king centered) — the engine
+ * must never be asked about a finished position.
+ */
 function terminalEval(fen: string, variant: VariantId): PositionEval | null {
   const position = GamePosition.fromFen(fen, variant);
-  if (position.isCheckmate()) {
-    // The side to move is mated: mate distance ±1 by convention here (the
-    // sign is what wp/classification consume; the board already shows mate).
-    const mated = position.turn;
+  const outcome = position.outcome();
+  if (outcome === "white" || outcome === "black") {
+    // Decided (checkmate or a variant win): winner is never the side to
+    // move. Encoded as mate ±1 — the sign is what wp/classification
+    // consume; the board already shows the ending.
     return {
       infos: [],
-      wpMover: 0,
-      whitePov: { cp: null, mateIn: mated === "w" ? -1 : 1 },
+      wpMover: position.turn === (outcome === "white" ? "w" : "b") ? 100 : 0,
+      whitePov: { cp: null, mateIn: outcome === "white" ? 1 : -1 },
       tb: null,
-      terminal: "checkmate",
+      terminal: position.isCheckmate() ? "checkmate" : "variant-end",
     };
   }
-  if (position.isStalemate() || position.isInsufficientMaterial()) {
+  if (outcome === "draw" || position.isStalemate() || position.isInsufficientMaterial()) {
     return {
       infos: [],
       wpMover: 50,
@@ -198,8 +204,18 @@ export async function analyzeGameChunk(
     (row) => row.evalBeforeCp === null && row.mateBefore === null
   );
   if (firstUnanalyzed === -1) {
-    const finalized = await finalizeDerived(db, gameId, opts);
-    return { gameId, analyzedPlies: 0, totalPlies: total, remainingPlies: 0, finalized };
+    const verify = await verifyBorderline(db, gameId, opts, {
+      maxPositions: opts.maxPositions,
+      deadline: opts.maxMs ? Date.now() + opts.maxMs : null,
+    });
+    const finalized = verify.remaining === 0 ? await finalizeDerived(db, gameId, opts) : false;
+    return {
+      gameId,
+      analyzedPlies: 0,
+      totalPlies: total,
+      remainingPlies: verify.remaining,
+      finalized,
+    };
   }
 
   const depth = opts.depth ?? ANALYSIS_SETTINGS.review.depth;
@@ -247,10 +263,15 @@ export async function analyzeGameChunk(
     index++;
   }
 
-  const remaining = total - index;
+  let remaining = total - index;
   let finalized = false;
   if (remaining === 0) {
-    finalized = await finalizeDerived(db, gameId, opts);
+    const verify = await verifyBorderline(db, gameId, opts, {
+      maxPositions: maxPositions - positionsUsed,
+      deadline,
+    });
+    remaining = verify.remaining;
+    if (verify.remaining === 0) finalized = await finalizeDerived(db, gameId, opts);
   }
   return {
     gameId,
@@ -387,6 +408,169 @@ async function writePlyRecord(
     .where(and(eq(plies.gameId, row.gameId), eq(plies.ply, row.ply)));
 }
 
+/**
+ * Borderline verification (§4.2): the Phase 2 agreement gate showed the d18
+ * batch eval is accurate everywhere except right at the MISTAKE/BLUNDER
+ * decision boundaries, where a small systematic depth effect (deeper
+ * analysis scores decided positions more decisively) parks real blunders one
+ * wp point under the line. Plies whose measured loss lands inside the
+ * boundary window get both of their positions re-searched at a deeper depth
+ * and their loss re-derived — refinement moves plies in BOTH directions, so
+ * this is a measurement improvement, not a threshold nudge.
+ */
+export const VERIFY_RULES = {
+  depth: 24,
+  /** Loss window around the 10 (MISTAKE) and 15 (BLUNDER) boundaries. */
+  lossMin: 8,
+  lossMax: 18,
+} as const;
+
+const BAND_CLASSES: Classification[] = ["EXCELLENT", "GOOD", "INACCURACY", "MISTAKE", "BLUNDER"];
+
+function bandForLoss(loss: number): Classification {
+  if (loss < LOSS_THRESHOLDS.excellent) return "EXCELLENT";
+  if (loss < LOSS_THRESHOLDS.good) return "GOOD";
+  if (loss < LOSS_THRESHOLDS.inaccuracy) return "INACCURACY";
+  if (loss < LOSS_THRESHOLDS.mistake) return "MISTAKE";
+  return "BLUNDER";
+}
+
+function needsVerify(row: PlyRow): boolean {
+  if (row.wpLoss === null) return false;
+  if ((row.analyzedAtDepth ?? 0) >= VERIFY_RULES.depth) return false;
+  if (row.wpLoss < VERIFY_RULES.lossMin || row.wpLoss > VERIFY_RULES.lossMax) return false;
+  // Only classes whose meaning rides on the loss measurement: the loss
+  // bands and MISS (which folds by loss). BOOK/BEST/GREAT/BRILLIANT are
+  // decided by other evidence and stay as analyzed.
+  const cls = row.classification;
+  return (
+    cls === "INACCURACY" || cls === "MISTAKE" || cls === "BLUNDER" || cls === "MISS"
+  );
+}
+
+/**
+ * Resumable: verified plies carry analyzedAtDepth = VERIFY_RULES.depth.
+ * Returns how many in-window plies still await verification (0 → done).
+ */
+export async function verifyBorderline(
+  db: Db,
+  gameId: string,
+  opts: AnalyzeChunkOpts,
+  budget?: { maxPositions?: number; deadline?: number | null }
+): Promise<{ remaining: number; refined: number; positionsUsed: number }> {
+  const game = (await db.select().from(games).where(eq(games.id, gameId)))[0];
+  if (!game) throw new Error(`no such game ${gameId}`);
+  const rows = await db
+    .select()
+    .from(plies)
+    .where(eq(plies.gameId, gameId))
+    .orderBy(asc(plies.ply));
+  if (rows.some((row) => row.wpBefore === null)) {
+    return { remaining: 0, refined: 0, positionsUsed: 0 };
+  }
+  const startFen = game.startFen ?? rows[0]?.fenBefore;
+  if (!startFen) return { remaining: 0, refined: 0, positionsUsed: 0 };
+  const variant = game.variant as VariantId;
+  const movesUci = rows.map((row) => row.uci);
+
+  // Position p (0-based) = fenBefore of ply p+1 = fenAfter of ply p.
+  const positionCache = new Map<number, PositionEval>();
+  let positionsUsed = 0;
+  const searchPosition = async (p: number): Promise<PositionEval> => {
+    const cached = positionCache.get(p);
+    if (cached) return cached;
+    const fen = p === 0 ? rows[0]!.fenBefore : rows[p - 1]!.fenAfter;
+    const result = await evaluatePosition(
+      fen,
+      startFen,
+      movesUci.slice(0, p),
+      variant,
+      opts,
+      VERIFY_RULES.depth,
+      1
+    );
+    positionsUsed++;
+    positionCache.set(p, result);
+    return result;
+  };
+
+  let refined = 0;
+  const maxPositions = budget?.maxPositions ?? Number.MAX_SAFE_INTEGER;
+  const deadline = budget?.deadline ?? null;
+  for (const row of rows) {
+    if (!needsVerify(row)) continue;
+    if (positionsUsed + 2 > maxPositions) break;
+    if (deadline !== null && Date.now() > deadline) break;
+    const before = await searchPosition(row.ply - 1);
+    const after = await searchPosition(row.ply);
+    const wpBefore = before.wpMover;
+    const wpAfter = 100 - after.wpMover;
+    const loss = wpBefore - wpAfter;
+    const cls = row.classification as Classification | null;
+    await db
+      .update(plies)
+      .set({
+        evalBeforeCp: before.whitePov.cp,
+        evalAfterCp: after.whitePov.cp,
+        mateBefore: before.whitePov.mateIn,
+        mateAfter: after.whitePov.mateIn,
+        wpBefore,
+        wpAfter,
+        wpLoss: loss,
+        classification: cls !== null && BAND_CLASSES.includes(cls) ? bandForLoss(loss) : cls,
+        analyzedAtDepth: VERIFY_RULES.depth,
+      })
+      .where(and(eq(plies.gameId, gameId), eq(plies.ply, row.ply)));
+    refined++;
+
+    // Keep the one-eval-per-position chain consistent: the two refreshed
+    // positions are shared with the neighbouring plies.
+    const prev = rows[row.ply - 2];
+    if (prev) {
+      const prevWpAfter = 100 - before.wpMover;
+      const prevLoss = prev.wpBefore! - prevWpAfter;
+      const prevCls = prev.classification as Classification | null;
+      await db
+        .update(plies)
+        .set({
+          evalAfterCp: before.whitePov.cp,
+          mateAfter: before.whitePov.mateIn,
+          wpAfter: prevWpAfter,
+          wpLoss: prevLoss,
+          classification:
+            prevCls !== null && BAND_CLASSES.includes(prevCls) ? bandForLoss(prevLoss) : prevCls,
+        })
+        .where(and(eq(plies.gameId, gameId), eq(plies.ply, prev.ply)));
+      prev.wpAfter = prevWpAfter;
+      prev.wpLoss = prevLoss;
+    }
+    const next = rows[row.ply];
+    if (next) {
+      const nextWpBefore = 100 - wpAfter;
+      const nextLoss = nextWpBefore - next.wpAfter!;
+      const nextCls = next.classification as Classification | null;
+      await db
+        .update(plies)
+        .set({
+          evalBeforeCp: after.whitePov.cp,
+          mateBefore: after.whitePov.mateIn,
+          wpBefore: nextWpBefore,
+          wpLoss: nextLoss,
+          classification:
+            nextCls !== null && BAND_CLASSES.includes(nextCls) ? bandForLoss(nextLoss) : nextCls,
+        })
+        .where(and(eq(plies.gameId, gameId), eq(plies.ply, next.ply)));
+      next.wpBefore = nextWpBefore;
+      next.wpLoss = nextLoss;
+    }
+    row.wpLoss = loss;
+    row.analyzedAtDepth = VERIFY_RULES.depth;
+  }
+
+  const remaining = rows.filter((row) => needsVerify(row)).length;
+  return { remaining, refined, positionsUsed };
+}
+
 function stdev(values: number[]): number {
   if (values.length === 0) return 0;
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
@@ -431,6 +615,10 @@ export async function finalizeDerived(
 
   const { detectAndStoreMotifs } = await import("@/lib/motifs/apply");
   await detectAndStoreMotifs(db, gameId, opts);
+  // Rated online games pick up their analysis-time fair-play signals here
+  // (A2.3: engine correlation is free once the review pipeline ran).
+  const { computeAnalysisSignals } = await import("@/lib/play/fairplay");
+  await computeAnalysisSignals(db, gameId);
   return true;
 }
 

@@ -29,11 +29,23 @@ export const CLASSIFICATIONS = [
 
 export type Classification = (typeof CLASSIFICATIONS)[number];
 
+/**
+ * Loss bands on the 0–100 win-probability scale. CORRECTED at the Phase 2
+ * agreement gate: the original spec numbers (10/20/30) transcribed
+ * Lichess's published thresholds (0.1/0.2/0.3) onto the 0–100 scale
+ * without halving — but those are deltas on Lichess's [−1,1]
+ * winning-chances scale, i.e. 5/10/15 win-probability points. §4.2 states
+ * the thresholds "derive from Lichess's", and the gate (blunder counts
+ * within ±20% of Lichess's own judgments on the same games) is the
+ * falsifiable that caught the doubling: at 10/20/30 GAMBIT reported ~4–5×
+ * fewer blunders than Lichess on identical positions with near-identical
+ * evals. Evidence in docs/gate-history and the Phase 2 gate report.
+ */
 export const LOSS_THRESHOLDS = {
   excellent: 2, // loss < 2 → EXCELLENT
-  good: 10, // loss < 10 → GOOD (spec: gaps between 5–10 fall to GOOD)
-  inaccuracy: 20, // 10 ≤ loss < 20 → INACCURACY
-  mistake: 30, // 20 ≤ loss < 30 → MISTAKE; ≥ 30 → BLUNDER
+  good: 5, // loss < 5 → GOOD
+  inaccuracy: 10, // 5 ≤ loss < 10 → INACCURACY  (Lichess ?! ≥ 0.1)
+  mistake: 15, // 10 ≤ loss < 15 → MISTAKE      (Lichess ?  ≥ 0.2); ≥ 15 → BLUNDER (?? ≥ 0.3)
 } as const;
 
 export const BRILLIANT_RULES = {

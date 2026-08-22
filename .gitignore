@@ -28,3 +28,5 @@ data/dev-server.log
 data/gate2-*.log
 data/gate2-report.txt
 data/mock-explorer.log
+data/gate2-report-final.txt
+data/gate2-verify2.log

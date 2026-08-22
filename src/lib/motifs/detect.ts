@@ -14,6 +14,7 @@ import {
   posFromFen,
   safeSquares,
   see,
+  sq,
   squareName,
   uciSquares,
   SEE_VALUES,
@@ -309,6 +310,76 @@ function backRank(ctx: Ctx): MotifDetection | null {
       matingSquare: squareName(matingSquare),
       king: squareName(king),
       pawnShield: escapes.map(squareName),
+      mateInPlies: ctx.refutationSteps.length,
+    },
+  };
+}
+
+/**
+ * BACK_RANK, missed direction: the position BEFORE the move held a forced
+ * back-rank mate for the mover (bestPv mates on the opponent's back rank
+ * with pawn-blocked escapes) and the played move let it go. Same geometry
+ * as the suffered case — the error is about a back rank either way.
+ */
+function missedBackRankMate(ctx: Ctx): MotifDetection | null {
+  const best = ctx.input.bestPv;
+  if (best.length === 0 || best[0] === ctx.input.movedUci) return null;
+  const replay = GamePosition.fromFen(ctx.input.fenBefore, ctx.variant);
+  let lastUci: string | null = null;
+  for (const uci of best.slice(0, 8)) {
+    if (!replay.moveUci(uci)) return null;
+    lastUci = uci;
+  }
+  if (!replay.isCheckmate() || lastUci === null) return null;
+  const finalGeo = posFromFen(replay.fen());
+  const opponent = opposite(ctx.mover);
+  if (finalGeo.turn !== (opponent === "white" ? "white" : "black")) return null;
+  const king = finalGeo.board.kingOf(opponent);
+  if (king === undefined) return null;
+  const backRankIndex = opponent === "white" ? 0 : 7;
+  if (Math.floor(king / 8) !== backRankIndex) return null;
+  const { to: matingSquare } = uciSquares(lastUci);
+  if (Math.floor(matingSquare / 8) !== backRankIndex) return null;
+  const forward = opponent === "white" ? 8 : -8;
+  const file = king % 8;
+  const escapes: Square[] = [];
+  for (const df of [-1, 0, 1]) {
+    const s = king + forward + df;
+    if (s >= 0 && s < 64 && Math.abs((s % 8) - file) <= 1) escapes.push(s);
+  }
+  const theirPawns = finalGeo.board.pawn.intersect(finalGeo.board[opponent]);
+  if (!escapes.every((s) => theirPawns.has(s))) return null;
+  return {
+    motif: "BACK_RANK",
+    confidence: 0.9,
+    evidenceClass: 5,
+    stakeCp: 10_000,
+    evidence: {
+      missed: true,
+      mateInPlies: Math.ceil(best.length / 2),
+      matingSquare: squareName(matingSquare),
+      bestLineStart: best[0],
+    },
+  };
+}
+
+/**
+ * The move walks into a FORCED mate (the stored refutation line ends in
+ * checkmate of the mover) — mate-class evidence regardless of whether the
+ * king-zone attacker count moved. Back-rank geometry outranks this when it
+ * also fires (higher confidence, same class).
+ */
+function mateAllowed(ctx: Ctx): MotifDetection | null {
+  if (!ctx.finalIsMate) return null;
+  if ((ctx.finalPos.turn === "w" ? "white" : "black") !== ctx.mover) return null;
+  if (ctx.refutationSteps.length === 0) return null;
+  return {
+    motif: "KING_SAFETY_COLLAPSE",
+    confidence: 0.85,
+    evidenceClass: 5,
+    stakeCp: 10_000,
+    evidence: {
+      forcedMate: true,
       mateInPlies: ctx.refutationSteps.length,
     },
   };
@@ -614,6 +685,90 @@ function trappedPiece(ctx: Ctx): MotifDetection | null {
   return null;
 }
 
+/**
+ * HANGING_PIECE, delayed capture: the punished piece stood en prise in the
+ * post-move position, but the refutation prepares first (an attack, a
+ * zwischenzug) and only captures at ply 2–4. The first-ply case is
+ * hangingPiece; this covers the "left it there and something else came
+ * first" pattern the UNCLEAR sample was full of.
+ */
+function deepHangingPiece(ctx: Ctx): MotifDetection | null {
+  let moverCounterplay = 0;
+  for (const [index, step] of ctx.refutationSteps.slice(0, 5).entries()) {
+    if (index === 0) continue; // hangingPiece's territory
+    if (step.mover === ctx.mover) {
+      moverCounterplay += step.capturedValue;
+      continue;
+    }
+    if (step.capturedSquare === null || step.capturedValue < SEE_VALUES.knight) continue;
+    const square = step.capturedSquare;
+    const piece = ctx.after.board.get(square);
+    // Must be OUR piece, already sitting there when our move ended.
+    if (!piece || piece.color !== ctx.mover || piece.role === "king") continue;
+    if (attackersOf(ctx.after.board, square, opposite(ctx.mover)).isEmpty()) continue;
+    // Not a trade the mover already recouped, and not a trapped piece
+    // (no-safe-square pieces are TRAPPED_PIECE's diagnosis).
+    if (moverCounterplay >= step.capturedValue - 100) continue;
+    if (piece.role !== "pawn" && safeSquares(ctx.after, square).isEmpty()) continue;
+    let captureSee = 0;
+    try {
+      captureSee = see(posFromFen(ctx.refutationFens[index]!), step.uci);
+    } catch {
+      captureSee = 0;
+    }
+    // Deliberately BELOW the specific mechanisms (fork/skewer/overload/
+    // king-zone geometry, class ≥3 at 0.85): a delayed material loss is the
+    // generic diagnosis, kept only when nothing sharper explains the ply.
+    return {
+      motif: "HANGING_PIECE",
+      confidence: captureSee > 0 ? 0.65 : 0.62,
+      evidenceClass: 3,
+      stakeCp: step.capturedValue,
+      evidence: {
+        square: squareName(square),
+        piece: piece.role,
+        capturedAtPly: index + 1,
+        capture: step.uci,
+        see: captureSee,
+        delayed: true,
+      },
+    };
+  }
+  return null;
+}
+
+/**
+ * KING_SAFETY heuristic: a voluntary king move off its home square in the
+ * opening (castling rights thrown away, not a forced reply to check) that
+ * the engine punishes hard. The UNCLEAR sample's "Ke7 in the opening"
+ * pattern.
+ */
+function openingKingWalk(ctx: Ctx): MotifDetection | null {
+  const { input } = ctx;
+  if (input.wpLoss < 10) return null;
+  const fullmove = Number(input.fenBefore.split(" ")[5] ?? "99");
+  if (fullmove > 12) return null;
+  const { from } = uciSquares(input.movedUci);
+  const home = ctx.mover === "white" ? sq("e1") : sq("e8");
+  if (from !== home) return null;
+  const piece = ctx.before.board.get(from);
+  if (!piece || piece.role !== "king") return null;
+  if (input.movedSan.startsWith("O-O")) return null;
+  // Forced replies to check are survival, not a king walk.
+  if (attackersOf(ctx.before.board, home, opposite(ctx.mover)).nonEmpty()) return null;
+  return {
+    motif: "KING_SAFETY_COLLAPSE",
+    confidence: 0.6,
+    evidenceClass: 1,
+    stakeCp: 200,
+    evidence: {
+      kingWalk: true,
+      lostCastling: true,
+      fullmove,
+    },
+  };
+}
+
 function kingSafetyCollapse(ctx: Ctx): MotifDetection | null {
   const beforeAttackers = kingZoneAttackers(ctx.before, ctx.mover);
   const afterAttackers = kingZoneAttackers(ctx.after, ctx.mover);
@@ -802,7 +957,10 @@ export function detectMotifs(input: MotifDetectionInput): MotifDetection[] {
 
   for (const detection of tbDetectors(ctx)) push(detection);
   push(backRank(ctx));
+  push(missedBackRankMate(ctx));
+  push(mateAllowed(ctx));
   push(hangingPiece(ctx));
+  push(deepHangingPiece(ctx));
   push(materialism(ctx));
   push(overloadedDefender(ctx));
   push(removingTheDefender(ctx));
@@ -812,6 +970,7 @@ export function detectMotifs(input: MotifDetectionInput): MotifDetection[] {
   push(discoveredAttackMissed(ctx));
   push(trappedPiece(ctx));
   push(kingSafetyCollapse(ctx));
+  push(openingKingWalk(ctx));
   push(pawnStructureCollapse(ctx));
   push(zwischenzugMissed(ctx));
   push(prematureAttack(ctx));
@@ -854,5 +1013,12 @@ export function detectMotifs(input: MotifDetectionInput): MotifDetection[] {
       b.confidence - a.confidence ||
       b.stakeCp - a.stakeCp
   );
-  return fired;
+  // One row per motif (blunder_tags is unique on (ply, motif)); multiple
+  // detectors may diagnose the same motif — the best-evidenced one stands.
+  const seen = new Set<MotifName>();
+  return fired.filter((detection) => {
+    if (seen.has(detection.motif)) return false;
+    seen.add(detection.motif);
+    return true;
+  });
 }

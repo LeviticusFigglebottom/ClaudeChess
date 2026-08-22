@@ -13,7 +13,7 @@ function base(partial: Partial<ClassifyInput> = {}): ClassifyInput {
   };
 }
 
-describe("loss bands (spec §4.2)", () => {
+describe("loss bands (§4.2, thresholds corrected to Lichess's actual scale — see LOSS_THRESHOLDS)", () => {
   it("loss < 2 → EXCELLENT", () => {
     expect(classifyMove(base({ wpBefore: 55, wpAfter: 53.5 }))).toBe("EXCELLENT");
   });
@@ -22,22 +22,18 @@ describe("loss bands (spec §4.2)", () => {
     expect(classifyMove(base({ wpBefore: 55, wpAfter: 51 }))).toBe("GOOD");
   });
 
-  it("loss in [5, 10) → GOOD (spec: the 5–10 gap falls to GOOD)", () => {
-    expect(classifyMove(base({ wpBefore: 55, wpAfter: 48 }))).toBe("GOOD");
+  it("loss in [5, 10) → INACCURACY (Lichess ?! at 0.1 winning-chances = 5wp)", () => {
+    expect(classifyMove(base({ wpBefore: 55, wpAfter: 48 }))).toBe("INACCURACY");
+    expect(classifyMove(base({ wpBefore: 55, wpAfter: 50 }))).toBe("INACCURACY"); // exactly 5
   });
 
-  it("loss in [10, 20) → INACCURACY", () => {
-    expect(classifyMove(base({ wpBefore: 55, wpAfter: 43 }))).toBe("INACCURACY");
-    expect(classifyMove(base({ wpBefore: 55, wpAfter: 45 }))).toBe("INACCURACY"); // exactly 10
+  it("loss in [10, 15) → MISTAKE (Lichess ? at 0.2 = 10wp)", () => {
+    expect(classifyMove(base({ wpBefore: 55, wpAfter: 43 }))).toBe("MISTAKE");
+    expect(classifyMove(base({ wpBefore: 55, wpAfter: 45 }))).toBe("MISTAKE"); // exactly 10
   });
 
-  it("loss in [20, 30) → MISTAKE", () => {
-    expect(classifyMove(base({ wpBefore: 60, wpAfter: 38 }))).toBe("MISTAKE");
-    expect(classifyMove(base({ wpBefore: 60, wpAfter: 40 }))).toBe("MISTAKE"); // exactly 20
-  });
-
-  it("loss ≥ 30 → BLUNDER", () => {
-    expect(classifyMove(base({ wpBefore: 70, wpAfter: 40 }))).toBe("BLUNDER"); // exactly 30
+  it("loss ≥ 15 → BLUNDER (Lichess ?? at 0.3 = 15wp)", () => {
+    expect(classifyMove(base({ wpBefore: 60, wpAfter: 45 }))).toBe("BLUNDER"); // exactly 15
     expect(classifyMove(base({ wpBefore: 85, wpAfter: 20 }))).toBe("BLUNDER");
   });
 
@@ -97,7 +93,7 @@ describe("GREAT — only-move (spec §4.4)", () => {
           playedUci: "d2d4",
           bestUci: "e2e4",
           wpBefore: 60,
-          wpAfter: 44,
+          wpAfter: 52,
           multipv: { wpPv1: 60, wpPv2: 44 },
         })
       )
@@ -143,7 +139,7 @@ describe("BRILLIANT (spec §4.3 — all conditions must hold)", () => {
     input.wpBefore = 60;
     input.wpAfter = 54;
     input.playedUci = "b2b4";
-    expect(classifyMove(input)).toBe("GOOD");
+    expect(classifyMove(input)).toBe("INACCURACY");
   });
 
   it("already trivially winning (wpBefore ≥ 85) → not BRILLIANT", () => {
@@ -233,7 +229,7 @@ describe("MISS (spec §4.2 row)", () => {
           miss: { bestEvalCp: 350, bestMateIn: null, playedEvalCp: 100, playedMateIn: null },
         })
       )
-    ).toBe("INACCURACY");
+    ).toBe("MISTAKE");
   });
 
   it("MISS is checked before the loss bands (a blunder-sized miss reads MISS)", () => {

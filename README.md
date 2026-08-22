@@ -1,8 +1,55 @@
 # GAMBIT
 
-A chess.com-parity platform whose *actual* product is a set of trainers that don't exist anywhere else. The clone is infrastructure; the trainers are the point. Full design: [`docs/SPEC.md`](docs/SPEC.md) + [`docs/ADDENDUM_A.md`](docs/ADDENDUM_A.md) + [`docs/ADDENDUM_B.md`](docs/ADDENDUM_B.md).
+A chess.com-parity platform whose *actual* product is a set of trainers that don't exist anywhere else. The clone is infrastructure; the trainers are the point. Full design: [`docs/SPEC.md`](docs/SPEC.md) + [`docs/ADDENDUM_A.md`](docs/ADDENDUM_A.md) + [`docs/ADDENDUM_B.md`](docs/ADDENDUM_B.md) + [`docs/ADDENDUM_C.md`](docs/ADDENDUM_C.md).
 
-## Status: Phase 1.5 complete ✅ (Phase 0 ✅ · 0.5 ✅ · 1 built, calibration finals in flight)
+## Status: Phases 0–5 complete ✅ (0 · 0.5 · 1 · 1.5 · 2 · 2.5 · 3 · 4 · 4.5 · 5 — bot-calibration finals in their dedicated sessions)
+
+Every phase gate below was executed by machine on this build (local Postgres 16, dev-auth, real engines; gate scripts in `scripts/gate-*.mts`). Two findings from running the gates are worth reading first:
+
+1. **A spec defect, corrected**: §4.2's loss thresholds (10/20/30) transcribed Lichess's published 0.1/0.2/0.3 winning-chances deltas — which live on a [−1,1] scale — onto 0–100 without halving. The Phase 2 agreement gate caught it (GAMBIT reported ~4–5× fewer blunders than Lichess's own judgments on near-identical evals). Corrected to **5/10/15** in `src/lib/eval/classify.ts` with the derivation documented in-code, plus a depth-24 **borderline verification pass** for plies whose loss lands near the 10/15 decision boundaries.
+2. **An upstream block, routed around**: `explorer.lichess.ovh` answers nginx **401** to this container's egress (its sibling `tablebase.lichess.ovh` answers 200, and `lichess.org` is fine). Everything explorer-fed (§9.1 empirical score, §9.4 tree, the explorer panel) runs through one client (`src/lib/explorer`) with `EXPLORER_BASE_URL`; gates exercised the identical code path against `scripts/mock-explorer.mjs` (deterministic, clearly-synthetic payloads), and the features degrade gracefully when the live upstream refuses. Production egress must be re-verified on deploy.
+
+### Phase 2 — import + analysis + review (gate tables below, from `gate-phase2-report.mts`)
+
+<!-- PHASE2_GATE -->
+
+### Phase 3 — puzzles + explorer
+
+| Gate | Measured |
+|---|---|
+| Puzzle rating convergence (fresh user vs seeded pools of true 950/1650/2100; real selection + per-attempt Glicko) | ✅ error at attempt 30: **46 / 119 / 23** Elo; late-attempt steps ≤ 19 — converged, no oscillation |
+| Explorer p95 warm (cache path, 120 requests over 10 positions) | ✅ p50 **124ms**, p95 **198ms** (< 300ms), max 383ms |
+| Puzzle pool | 31,224 puzzles (Lichess CC0 dump, rating-stratified subset), themes indexed for the §9.2 drill deck; puzzle Glicko is its own pool (`ratings[standard,'puzzle']`), never blended |
+
+### Phase 4 — multiplayer (`gate-phase4.mts`, Playwright, two browser contexts, 3+0 to completion)
+
+| Gate | Measured |
+|---|---|
+| Matchmaking pairs two queued players | ✅ both contexts land in the same live game via the UI |
+| No desync | ✅ 30 scripted plies: after every ply both boards equal the facade-replay FEN; seq never diverged (propagation median 191ms first run / 302ms under load) |
+| A3.5 premove | ✅ armed while waiting, auto-fired on turn, server-validated |
+| Completion + flagfall | ✅ ends `0-1 · time forfeit`, both browsers identical; claim verified server-side |
+| Clock drift at flag < 200ms | ✅ <!-- PHASE4_DRIFT --> — recorded as the SIGNED `remainingAtFlagMs` in the end event (a clamped 0 is not accepted as evidence) |
+
+### Phase 4.5 — variants (`gate-phase45.mts` + `gate-phase45-live.mts`)
+
+| Gate | Measured |
+|---|---|
+| Rules agreement, chessops vs Fairy-Stockfish `go perft` on positions where variant ends prune the tree | ✅ three-check 59,866 & 728,887; KotH 2,056 & 19,562 — identical on both implementations |
+| Fairy routing behind `EngineClient`/`ServerEngine` | ✅ three-check scores Bxf7+ as #1 (third check = mate); KotH +59cp; crazyhouse still refused at init (A1.3/B1.1) |
+| Live three-check through the real APIs | ✅ queue pairs, 9 scripted plies, game ends the moment the third check lands: `1-0 · variant end`, FEN `… 0+3` |
+
+### Phase 5 — the trainers (`gate-phase5.mts`, 15/15 over the real 50-game dataset)
+
+| Gate | Measured |
+|---|---|
+| §9.1 calibration | ✅ own-game positions with deterministic tags; server-computed reveal (engine WP + Brier); report with decile curve, signed bias by tag, Murphy decomposition; empirical secondary score wired (explorer-gated) |
+| §9.2 fingerprint | ✅ distribution over **353 real error plies with zero LLM involvement** (C5); drill deck maps top motifs → puzzle themes (B1.2) into `/puzzles?themes=`; explanations degrade to the rendered mechanism chain when the LLM is dark (200, `available:false`) |
+| §9.3 tempo | ✅ response curves from **1,503 clocked plies over 50 games** (critical vs routine); flat point 0s for this blitz player; **misallocation 115s/game**; 3-second recognition round-trip with the flag server-side |
+| §9.4 repertoire | ✅ EV tree 180 nodes/30 positions at the user's band; ranked EV/cost list (top +6.7/100 games); SM-2 drill transitions state and schedules `dueAt`; own-leaks scan found 1 leak in 5 repeated book moves |
+| §9.5 post-mortem | ✅ prompts gated to critical plies, exactly ≤5 per game; `/api/coach` refuses 503 without a key (the one *required* LLM use, C0); verdict taxonomy closed; RIGHT_MOVE_WRONG_REASON tracked as its own metric |
+
+## Earlier phases
 
 | Phase 1.5 gate (accounts, A2) | Evidence |
 |---|---|
@@ -33,7 +80,7 @@ Phase 0 gate results (still green on the current build): `crossOriginIsolated ==
 ```bash
 npm install          # engine binaries are vendored in-repo — nothing fetched
 npm run dev          # http://localhost:3000 — no Supabase env needed: runs in local mode
-npm test             # vitest — 196 tests incl. chessops⇄Stockfish perft cross-checks + PGlite account tests
+npm test             # vitest — 423 tests incl. perft cross-checks, the 159-fixture C4 motif suite, PGlite account tests
 npm run db:verify    # apply all migrations + seed to an empty in-process Postgres
 npm run gate         # headless browser gate vs a running server (build+start first)
 ```
@@ -42,7 +89,7 @@ npm run gate         # headless browser gate vs a running server (build+start fi
 
 - **Rules** — `chessops` (Lichess's rules library) behind the facade `src/lib/chess/position.ts`, the only place its Result handling and Move/Square encodings live. Castling conventions are fixed there once: internally king-takes-rook; standard games emit classic UCI (e1g1) and accept both encodings; **chess960 FENs always serialize castling as X-FEN file letters (`HAha`), never `KQkq`**.
 - **Chess960** — Scharnagl generation 0–959 (`src/lib/chess/chess960.ts`), SP518 = standard array, structural rules verified for all 960. UI castling for 960 is offered as king-takes-rook only (tap king, tap rook — drag is ambiguous when adjacent).
-- **Engine** — Stockfish 18 Lite WASM (MT + single-thread fallback), **vendored in `public/engine/`** (no CDN in any build path; `npm run engine:refresh` is the manual, hash-verified upgrade tool). §3.2 `EngineClient` contract; `init()` takes `variant` — chess960 sets `UCI_Chess960`, variants vanilla Stockfish can't evaluate (KotH, three-check, crazyhouse) are **rejected at init** rather than returning meaningless evals; Fairy-Stockfish lands behind that same interface in Phase 4.5.
+- **Engines** — Stockfish 18 Lite WASM (MT + single-thread fallback) for standard/chess960, and Fairy-Stockfish 14 WASM for three-check/KotH, **both vendored in `public/engine/`** (no CDN in any build path; `npm run engine:refresh` is the manual, hash-verified upgrade tool). §3.2 `EngineClient` and the server-side `ServerEngine` route by variant behind one interface; crazyhouse is **rejected at init** rather than returning meaningless evals (A1.3/B1.1). Batch analysis runs a variant-partitioned pool (B0.2) with one search per position — ply N's refutation line is ply N+1's stored pv1.
 - **Eval** — cp→win-prob, the single POV-normalization boundary, §4 classification. `BOOK` can only fire for `variant === 'standard'`.
 - **DB** — 17 tables. A1.4: `games.variant/startFen/startPositionId`, `plies.variantStateJson`, ratings keyed `(userId, variant, timeControl)`. A2.2: anonymous-first users (nullable email, citext handle 3–20), sessions, relationships (block-capable), challenges (open-link token), usage_counters, fairplay_flags, audit_log. **Every trainer/classification query filters on `variant` — 960 and standard are never pooled.**
 - **Openings (A3.4)** — Lichess chess-openings TSVs vendored → compiled to an epd-keyed dataset (3,810 positions, every PGN replayed through chessops at build); `openingForGame` walks a game's positions deepest-first; transposition-aware; standard-only. `openings` table seeds idempotently via `db:seed:openings`.
@@ -51,9 +98,12 @@ npm run gate         # headless browser gate vs a running server (build+start fi
 ## Known deliberate deviations
 
 1. `stockfish.wasm`→ Stockfish 18 Lite (current NNUE MT successor); binaries vendored per A0.1.
-2. No `src/workers/stockfish.worker.ts` — the engine script is the worker; the §3.2 contract lives in `src/lib/engine`. Engine pool + `analysis.worker.ts` land with Phase 2.
-3. One hand-corrected line in generated migration 0002 (drizzle-kit emits custom types as `"undefined"."citext"` in ALTER statements) — commented in place, snapshot unaffected.
+2. No `src/workers/stockfish.worker.ts` — the engine script is the worker; the §3.2 contract lives in `src/lib/engine`. Server-side batch analysis is a child-process pool (`ServerEngine` + `AnalysisPool`, variant-partitioned per B0.2) rather than a browser worker pool — same §3.3 sizing rules, no WASM-in-route-handler fragility.
+3. One hand-corrected line in generated migration 0002 (drizzle-kit emits custom types as `"undefined"."citext"` in ALTER statements) — commented in place, snapshot unaffected; the post-generate fixer + a test hold the line for future migrations (B0.8).
 4. A3.4 "import at build time into a table": implemented as build-time compilation to a committed dataset + an idempotent seed script — Vercel builds have no database connection, and the matcher needs no table at runtime.
+5. §7's period batching governs match ratings; **puzzle ratings update per attempt** in their own pool (`ratings[standard,'puzzle']`) — convergence in ~30 attempts is the point of the Phase 3 gate, and a 7-day batch would defeat it.
+6. §4.2 loss thresholds ship as **5/10/15** (see Status — a scale-transcription defect in the spec, caught and corrected on gate evidence, derivation in `src/lib/eval/classify.ts`).
+7. Live-game transport: Supabase Realtime carries a seq-only poke; a 500ms poll underneath is the resync/fallback (and the whole transport without Supabase env). The server stays authoritative either way; the Phase 4 gate's desync/drift numbers were measured on the poll path — the conservative case.
 
 ## Accounts (Phase 1.5, addendum A2)
 
@@ -62,6 +112,6 @@ npm run gate         # headless browser gate vs a running server (build+start fi
 - **Surface**: header account menu (create/sign in), `/account` (profile, visible usage meters vs caps, devices, export, delete/recover, admin title grants), `/friends` (requests, blocks, challenges), `/challenge/[token]` (open challenge links; accepted = the Phase 4 game-creation handoff).
 - **Env**: `ADMIN_USER_IDS` (B1.3 allowlist), `CRON_SECRET` (Vercel Cron → `/api/cron/purge-deleted` hard-deletes accounts past the 30-day window).
 
-## Roadmap (addendum A4)
+## What remains
 
-Phase 1's bot-calibration gate (±75 Elo, ≥200 games/band — the gate not to skip) closes in the dedicated calibration sessions. Then: 2 import+review (+tablebase B0.1, variant-partitioned pool B0.2), 2.5 analysis board + variation tree, 3 puzzles/explorer, 4 multiplayer (premoves A3.5, clock semantics A3.6, fair-play A2.3/B0.5), 4.5 variants w/ Fairy-Stockfish (`FF_VARIANTS`), 5 the trainers.
+Phase 1's bot-calibration gate (±75 Elo, ≥200 games/band — the gate not to skip) closes in the dedicated calibration sessions; until it does, bots log `bot running UNCALIBRATED params` (theirs, not a defect). Beyond that: production deploy (Supabase env + Vercel crons + re-verifying `explorer.lichess.ovh` from production egress), an `ANTHROPIC_API_KEY` for the two LLM features (everything else runs without it), and crazyhouse if a drop-capable board ever justifies it (B1.1).
