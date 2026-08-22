@@ -492,7 +492,16 @@ export async function verifyBorderline(
   db: Db,
   gameId: string,
   opts: AnalyzeChunkOpts,
-  budget?: { maxPositions?: number; deadline?: number | null }
+  budget?: {
+    maxPositions?: number;
+    deadline?: number | null;
+    /**
+     * Selection override (the d24 re-verification after the 20s-soft-stop
+     * finding): re-process rows this predicate accepts INSTEAD of the
+     * needsVerify gate, reusing every update rule verbatim.
+     */
+    force?: (row: PlyRow) => boolean;
+  }
 ): Promise<{ remaining: number; refined: number; positionsUsed: number }> {
   const game = (await db.select().from(games).where(eq(games.id, gameId)))[0];
   if (!game) throw new Error(`no such game ${gameId}`);
@@ -533,12 +542,20 @@ export async function verifyBorderline(
   let refined = 0;
   const maxPositions = budget?.maxPositions ?? Number.MAX_SAFE_INTEGER;
   const deadline = budget?.deadline ?? null;
+  const selected = budget?.force ?? needsVerify;
   for (const row of rows) {
-    if (!needsVerify(row)) continue;
+    if (!selected(row)) continue;
     if (positionsUsed + 2 > maxPositions) break;
     if (deadline !== null && Date.now() > deadline) break;
     const before = await searchPosition(row.ply - 1);
     const after = await searchPosition(row.ply);
+    if (before.degraded !== null || after.degraded !== null) {
+      // Verification refines an already COMPLETE lower-depth analysis; a
+      // degraded d24 search must not overwrite honest d18 numbers or stamp
+      // a depth it never reached. Leave the ply as analyzed (needsVerify
+      // may retry it on a later pass).
+      continue;
+    }
     const wpBefore = before.wpMover;
     const wpAfter = 100 - after.wpMover;
     const loss = wpBefore - wpAfter;

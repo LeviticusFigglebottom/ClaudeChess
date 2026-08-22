@@ -59,7 +59,7 @@ export function AccountClient() {
           </p>
           <button
             onClick={() => void auth.recoverAccount()}
-            className="mt-4 rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90"
+            className="mt-4 btn-primary px-4 py-1.5 text-sm"
           >
             Recover my account
           </button>
@@ -92,7 +92,7 @@ export function AccountClient() {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <h1 className="mb-5 text-xl font-semibold text-paper">Account</h1>
+      <h1 className="mb-5 text-2xl font-bold text-paper">Account</h1>
       {children}
     </div>
   );
@@ -100,7 +100,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-edge p-5">
+    <section className="card p-5">
       <h2 className="mb-3 text-base font-semibold text-paper">{title}</h2>
       {children}
     </section>
@@ -179,7 +179,7 @@ function ProfileCard({ me, onSaved }: { me: MeResponse; onSaved: () => void }) {
         <button
           onClick={() => void save()}
           disabled={busy}
-          className="rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90 disabled:opacity-50"
+          className="btn-primary px-4 py-1.5 text-sm"
         >
           Save
         </button>
@@ -419,7 +419,7 @@ function AdminCard() {
         </label>
         <button
           onClick={() => void grant()}
-          className="rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90"
+          className="btn-primary px-4 py-1.5 text-sm"
         >
           Apply
         </button>

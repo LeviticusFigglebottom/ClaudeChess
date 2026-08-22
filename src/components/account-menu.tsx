@@ -63,12 +63,12 @@ export function AccountMenu() {
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-2 rounded border border-edge px-2.5 py-1 text-xs text-text-dim hover:border-edge-strong hover:text-text"
+        className="flex items-center gap-2 rounded-lg border border-edge bg-surface px-3 py-1.5 text-xs text-text-dim transition-colors hover:border-edge-strong hover:bg-surface-2 hover:text-text"
         aria-haspopup="menu"
         aria-expanded={open}
       >
         <span
-          className={`inline-block h-1.5 w-1.5 rounded-full ${isGuest ? "bg-lcd" : "bg-brilliant"}`}
+          className={`inline-block h-1.5 w-1.5 rounded-full ${isGuest ? "bg-lcd" : "bg-accent"}`}
           aria-hidden
         />
         <span className="notation">{profile?.handle ?? "guest"}</span>
@@ -77,7 +77,7 @@ export function AccountMenu() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-30 mt-2 w-60 rounded-lg border border-edge bg-field p-2 shadow-xl"
+          className="card absolute right-0 z-30 mt-2 w-60 p-2"
         >
           {isGuest ? (
             <>
@@ -87,7 +87,7 @@ export function AccountMenu() {
               </p>
               <button
                 role="menuitem"
-                className="mt-1 w-full rounded bg-lcd px-2 py-1.5 text-left text-sm font-medium text-field hover:opacity-90"
+                className="btn-primary mt-1 w-full justify-start px-2 py-1.5 text-sm"
                 onClick={() => {
                   setOpen(false);
                   setDialog("convert");
@@ -97,7 +97,7 @@ export function AccountMenu() {
               </button>
               <button
                 role="menuitem"
-                className="mt-1 w-full rounded px-2 py-1.5 text-left text-sm text-text-dim hover:bg-raise hover:text-text"
+                className="mt-1 w-full rounded px-2 py-1.5 text-left text-sm text-text-dim hover:bg-surface-2 hover:text-text"
                 onClick={() => {
                   setOpen(false);
                   setDialog("signin");
@@ -118,7 +118,7 @@ export function AccountMenu() {
           <Link
             role="menuitem"
             href="/account"
-            className="block rounded px-2 py-1.5 text-sm text-text-dim hover:bg-raise hover:text-text"
+            className="block rounded px-2 py-1.5 text-sm text-text-dim hover:bg-surface-2 hover:text-text"
             onClick={() => setOpen(false)}
           >
             Account &amp; usage
@@ -126,7 +126,7 @@ export function AccountMenu() {
           <Link
             role="menuitem"
             href="/friends"
-            className="block rounded px-2 py-1.5 text-sm text-text-dim hover:bg-raise hover:text-text"
+            className="block rounded px-2 py-1.5 text-sm text-text-dim hover:bg-surface-2 hover:text-text"
             onClick={() => setOpen(false)}
           >
             Friends &amp; challenges
@@ -134,7 +134,7 @@ export function AccountMenu() {
           {!isGuest && (
             <button
               role="menuitem"
-              className="mt-1 w-full rounded px-2 py-1.5 text-left text-sm text-text-dim hover:bg-raise hover:text-text"
+              className="mt-1 w-full rounded px-2 py-1.5 text-left text-sm text-text-dim hover:bg-surface-2 hover:text-text"
               onClick={() => {
                 setOpen(false);
                 void auth.signOutDevice();
@@ -193,7 +193,7 @@ function AuthDialog({ mode, onClose }: { mode: "convert" | "signin"; onClose: ()
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-sm rounded-xl border border-edge bg-field p-5">
+      <div className="card w-full max-w-sm p-5">
         <h2 className="mb-1 text-lg font-semibold text-paper">
           {mode === "convert" ? "Create your account" : "Sign in"}
         </h2>

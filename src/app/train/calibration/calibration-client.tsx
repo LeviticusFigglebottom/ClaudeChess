@@ -156,7 +156,7 @@ function ReportPanel({ report }: { report: Report }) {
   }
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border border-edge p-4">
+      <div className="card p-4">
         <h2 className="mb-2 text-sm font-semibold text-paper">
           Calibration — {report.n} predictions
         </h2>
@@ -179,7 +179,7 @@ function ReportPanel({ report }: { report: Report }) {
           </p>
         )}
       </div>
-      <div className="rounded-xl border border-edge p-4">
+      <div className="card p-4">
         <h3 className="mb-2 text-sm font-semibold text-paper">Curve (diagonal = calibrated)</h3>
         <table className="w-full text-xs">
           <thead>
@@ -201,7 +201,7 @@ function ReportPanel({ report }: { report: Report }) {
         </table>
       </div>
       {report.biasByTag.length > 0 && (
-        <div className="rounded-xl border border-edge p-4">
+        <div className="card p-4">
           <h3 className="mb-2 text-sm font-semibold text-paper">Directional bias</h3>
           <ul className="flex flex-col gap-1 text-xs text-text-dim">
             {report.biasByTag.slice(0, 6).map((row) => (

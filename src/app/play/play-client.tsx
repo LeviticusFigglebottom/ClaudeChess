@@ -1,10 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { AnalysisBoard } from "@/components/analysis-board";
 import { BotGameView } from "@/components/bot-game";
 import { GameSetupCard } from "@/components/game-setup";
-import { SettingsPanel } from "@/components/settings-panel";
 import { VsHumanCard } from "@/components/vs-human-card";
 import { useAuth } from "@/components/auth-context";
 import { usePrefs } from "@/components/prefs-context";
@@ -24,9 +24,9 @@ export function PlayClient() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div className="flex items-baseline justify-between gap-4">
-        <h1 className="text-xl font-semibold text-paper">
+        <h1 className="text-2xl font-bold text-paper">
           {mode === "analysis" ? "Analysis board" : "Play"}
         </h1>
         {mode !== "setup" && (
@@ -41,23 +41,20 @@ export function PlayClient() {
 
       {mode === "setup" && (
         <>
-          <GameSetupCard onStart={startGame} onFreeBoard={() => setMode("analysis")} />
-          <VsHumanCard />
-          <SettingsPanel />
+          <div className="grid items-start gap-5 xl:grid-cols-2">
+            <GameSetupCard onStart={startGame} onFreeBoard={() => setMode("analysis")} />
+            <VsHumanCard />
+          </div>
+          <p className="text-sm text-text-faint">
+            Board looks off?{" "}
+            <Link href="/settings" className="text-text-dim underline-offset-2 hover:text-text hover:underline">
+              Themes, pieces and sounds live in Settings.
+            </Link>
+          </p>
         </>
       )}
-      {mode === "game" && (
-        <>
-          <BotGameView game={game} onExit={() => setMode("setup")} />
-          <SettingsPanel />
-        </>
-      )}
-      {mode === "analysis" && (
-        <>
-          <AnalysisBoard />
-          <SettingsPanel />
-        </>
-      )}
+      {mode === "game" && <BotGameView game={game} onExit={() => setMode("setup")} />}
+      {mode === "analysis" && <AnalysisBoard />}
     </div>
   );
 }

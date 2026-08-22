@@ -26,6 +26,7 @@ const flag = (name: string, fallback: string) => {
   return index !== -1 ? args[index + 1]! : fallback;
 };
 const DUMP = flag("--dump", "data/dumps/lichess_db_standard_rated_2014-07.pgn.zst");
+const URL_SOURCE = flag("--url", "");
 const MAX_GAMES = Number(flag("--max-games", "2000000"));
 const MIN_GAMES = Number(flag("--min-games", "10"));
 const OUT = flag("--out", "src/db/seed/explorer-agg.jsonl.gz");
@@ -95,7 +96,12 @@ function processGame(headers: Map<string, string>, movetext: string): void {
 }
 
 async function main() {
-  const zstd = spawn("zstd", ["-dc", DUMP], { stdio: ["ignore", "pipe", "inherit"] });
+  // --url streams the dump straight through curl|zstd — a PREFIX of the
+  // month (first days) with --max-games, so a recent month costs only the
+  // bytes actually consumed instead of a 30GB download.
+  const zstd = URL_SOURCE
+    ? spawn("sh", ["-c", `curl -sL "${URL_SOURCE}" | zstd -dc`], { stdio: ["ignore", "pipe", "inherit"] })
+    : spawn("zstd", ["-dc", DUMP], { stdio: ["ignore", "pipe", "inherit"] });
   const lines = createInterface({ input: zstd.stdout, crlfDelay: Infinity });
   let headers = new Map<string, string>();
   let movetext = "";
@@ -137,6 +143,20 @@ async function main() {
   const sink = createWriteStream(OUT);
   gzip.pipe(sink);
   let written = 0;
+  const source = URL_SOURCE ? URL_SOURCE.split("/").pop()!.replace(".pgn.zst", "") : DUMP.split("/").pop()!.replace(".pgn.zst", "");
+  // First line: seed metadata — the source month is recorded so staleness
+  // is visible, and the version string drives the seed guard.
+  gzip.write(
+    JSON.stringify({
+      meta: {
+        source,
+        gamesUsed: used,
+        minGames: MIN_GAMES,
+        builtAt: new Date().toISOString().slice(0, 10),
+        version: `${source}:min${MIN_GAMES}`,
+      },
+    }) + "\n"
+  );
   for (const [key, counts] of agg) {
     const total = counts[0]! + counts[1]! + counts[2]!;
     if (total < MIN_GAMES) continue;

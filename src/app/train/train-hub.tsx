@@ -49,10 +49,9 @@ const TRAINERS: {
 export function TrainHub() {
   return (
     <div>
-      <h1 className="mb-1 text-xl font-semibold text-paper">Train</h1>
+      <h1 className="mb-1 text-2xl font-bold text-paper">Train</h1>
       <p className="mb-5 text-sm text-text-faint">
-        Diagnostic instruments over your own games. Dark by default — enable each in
-        Settings → Labs.
+        Diagnostic instruments over your own games. Dark by default — flip each on in Settings → Labs.
       </p>
       <div className="grid gap-4 md:grid-cols-2">
         {TRAINERS.map((trainer) => (
@@ -66,7 +65,7 @@ export function TrainHub() {
 function TrainerCard({ flag, href, name, claim }: (typeof TRAINERS)[number]) {
   const on = useFlag(flag);
   return (
-    <div className={`rounded-xl border p-5 ${on ? "border-edge" : "border-edge opacity-60"}`}>
+    <div className={`card p-5 ${on ? "card-hover" : "opacity-60"}`}>
       <div className="mb-1 flex items-baseline justify-between gap-3">
         <h2 className="text-base font-semibold text-paper">{name}</h2>
         <span className={`notation text-xs ${on ? "text-brilliant" : "text-text-faint"}`}>
@@ -75,14 +74,11 @@ function TrainerCard({ flag, href, name, claim }: (typeof TRAINERS)[number]) {
       </div>
       <p className="mb-3 text-sm text-text-dim">{claim}</p>
       {on ? (
-        <Link
-          href={href}
-          className="inline-block rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90"
-        >
+        <Link href={href} className="btn-primary px-4 py-1.5 text-sm">
           Open
         </Link>
       ) : (
-        <p className="text-xs text-text-faint">Enable in Settings → Labs.</p>
+        <p className="text-xs text-text-faint">Enable in <a href="/settings" className="underline underline-offset-2">Settings → Labs</a>.</p>
       )}
     </div>
   );

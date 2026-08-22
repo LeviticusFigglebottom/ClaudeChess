@@ -12,6 +12,15 @@ import type { NextConfig } from "next";
  * must be proxied through a route handler.
  */
 const nextConfig: NextConfig = {
+  // The server-side batch pipeline spawns the vendored engine builds from
+  // public/engine at a runtime-computed path, which static file tracing
+  // cannot see — without this, Vercel function bundles ship WITHOUT the
+  // engine (public/ goes to the CDN, not the function filesystem) and the
+  // spawned child dies instantly. Measured on prod 2026-08-22: every
+  // /api/analyze call hung to the 300s FUNCTION_INVOCATION_TIMEOUT.
+  outputFileTracingIncludes: {
+    "/api/analyze": ["./public/engine/**/*"],
+  },
   async headers() {
     return [
       {

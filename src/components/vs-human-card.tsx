@@ -104,7 +104,7 @@ export function VsHumanCard() {
 
   if (auth.status !== "ready") {
     return (
-      <div className="max-w-xl rounded-xl border border-edge p-5">
+      <div className="card p-5">
         <h2 className="mb-2 text-lg font-semibold text-paper">Play a human</h2>
         <p className="text-sm text-text-faint">
           {auth.status === "connecting" ? "Connecting…" : "Live play needs the account service."}
@@ -114,19 +114,19 @@ export function VsHumanCard() {
   }
 
   const chip = (active: boolean) =>
-    `rounded border px-2.5 py-1 text-sm ${
+    `rounded-lg border px-3 py-1.5 text-sm transition-colors ${
       active
-        ? "border-edge-strong bg-raise text-text"
-        : "border-edge text-text-dim hover:border-edge-strong hover:text-text"
+        ? "border-accent bg-surface-3 text-text"
+        : "border-edge text-text-dim hover:border-edge-strong hover:bg-surface-2 hover:text-text"
     }`;
 
   return (
-    <div className="max-w-xl rounded-xl border border-edge p-5">
+    <div className="card p-5">
       <h2 className="mb-3 text-lg font-semibold text-paper">Play a human</h2>
       {activeGame && (
         <button
           onClick={() => router.push(`/play/live/${activeGame}`)}
-          className="mb-3 block w-full rounded bg-lcd px-3 py-2 text-left text-sm font-medium text-field hover:opacity-90"
+          className="btn-primary mb-3 w-full justify-start"
         >
           You have a game in progress — rejoin
         </button>
@@ -193,18 +193,12 @@ export function VsHumanCard() {
       {searching ? (
         <div className="flex items-center gap-3">
           <span className="text-sm text-text-dim">Searching — the rating window widens as you wait…</span>
-          <button
-            onClick={() => void cancel()}
-            className="rounded border border-edge px-3 py-1 text-sm text-text-dim hover:border-edge-strong"
-          >
+          <button onClick={() => void cancel()} className="btn-ghost px-3 py-1 text-sm">
             Cancel
           </button>
         </div>
       ) : (
-        <button
-          onClick={() => void search()}
-          className="rounded bg-lcd px-5 py-2 text-sm font-medium text-field hover:opacity-90"
-        >
+        <button onClick={() => void search()} className="btn-primary">
           Find an opponent
         </button>
       )}

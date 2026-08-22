@@ -106,20 +106,20 @@ export function BotGameView({ game, onExit }: { game: BotGameApi; onExit(): void
           <div className="flex flex-wrap gap-2">
             <button
               onClick={game.resign}
-              className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+              className="btn-ghost px-3 py-1.5 text-sm"
             >
               Resign
             </button>
             <button
               onClick={game.offerDraw}
-              className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+              className="btn-ghost px-3 py-1.5 text-sm"
             >
               Offer draw
             </button>
             {!setup?.rated && (
               <button
                 onClick={game.takeback}
-                className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+                className="btn-ghost px-3 py-1.5 text-sm"
               >
                 Takeback
               </button>
@@ -128,7 +128,7 @@ export function BotGameView({ game, onExit }: { game: BotGameApi; onExit(): void
         )}
 
         {game.drawOffer === "declined" && game.status === "playing" && (
-          <p className="rounded-lg border border-edge px-3 py-2 text-sm text-text-dim">
+          <p className="card px-3 py-2 text-sm text-text-dim">
             {bot?.name} declines the draw.
           </p>
         )}
@@ -138,7 +138,7 @@ export function BotGameView({ game, onExit }: { game: BotGameApi; onExit(): void
         )}
 
         {game.gameOver && (
-          <div className="rounded-lg border border-edge-strong bg-raise p-4">
+          <div className="card border-accent/40 p-4">
             <p className="notation text-lg text-paper">{game.gameOver.result}</p>
             <p className="mt-0.5 text-sm text-text-dim">
               {game.gameOver.playerScore === 1
@@ -159,19 +159,19 @@ export function BotGameView({ game, onExit }: { game: BotGameApi; onExit(): void
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 onClick={() => void navigator.clipboard.writeText(game.pgn())}
-                className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+                className="btn-ghost px-3 py-1.5 text-sm"
               >
                 Copy PGN
               </button>
               <button
                 onClick={downloadPgn}
-                className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+                className="btn-ghost px-3 py-1.5 text-sm"
               >
                 Download PGN
               </button>
               <button
                 onClick={onExit}
-                className="rounded-lg bg-paper px-3 py-1.5 text-sm font-medium text-field hover:bg-white-adv"
+                className="btn-primary px-4 py-1.5 text-sm"
               >
                 New game
               </button>
@@ -179,7 +179,7 @@ export function BotGameView({ game, onExit }: { game: BotGameApi; onExit(): void
           </div>
         )}
 
-        <div className="max-h-80 overflow-y-auto rounded-lg border border-edge p-3">
+        <div className="card max-h-80 overflow-y-auto p-3">
           {movePairs.length === 0 ? (
             <p className="text-sm text-text-faint">
               {game.position?.turn === playerColor
@@ -216,11 +216,11 @@ export function BotGameView({ game, onExit }: { game: BotGameApi; onExit(): void
               onChange={(event) => setSanInput(event.target.value)}
               placeholder="Type a move (SAN — e4, Nf3, O-O)"
               aria-label="Keyboard move entry"
-              className="min-w-0 flex-1 rounded-lg border border-edge bg-transparent px-3 py-1.5 text-sm placeholder:text-text-faint"
+              className="min-w-0 flex-1 rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-sm placeholder:text-text-faint"
             />
             <button
               type="submit"
-              className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong"
+              className="btn-ghost px-3 py-1.5 text-sm"
             >
               Play
             </button>

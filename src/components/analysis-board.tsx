@@ -353,7 +353,7 @@ export function AnalysisBoard({ initialGameId }: { initialGameId?: string }) {
           )}
         </div>
 
-        <div className="rounded-lg border border-edge p-3">
+        <div className="rounded-xl border border-edge bg-surface-2 p-3">
           <div className="mb-2 flex items-baseline justify-between text-xs text-text-faint">
             <span>
               {engine.status === "booting" && "Engine booting…"}

@@ -94,7 +94,7 @@ export function GamesClient() {
           </p>
         )}
         {games && games.length > 0 && (
-          <ul>
+          <ul className="card overflow-hidden">
             {games.map((game) => (
               <GameRow key={game.id} game={game} />
             ))}
@@ -108,7 +108,7 @@ export function GamesClient() {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <h1 className="mb-5 text-xl font-semibold text-paper">Games</h1>
+      <h1 className="mb-5 text-2xl font-bold text-paper">Games</h1>
       {children}
     </div>
   );
@@ -126,7 +126,7 @@ function GameRow({ game }: { game: GameRowPayload }) {
     <li className="border-b border-edge last:border-0">
       <Link
         href={`/analysis/${game.id}`}
-        className="flex items-center gap-3 px-1 py-2 hover:bg-raise"
+        className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2"
       >
         <span
           className={`notation w-8 text-sm ${won ? "text-brilliant" : drew ? "text-text-dim" : "text-warn-1"}`}
@@ -226,7 +226,7 @@ function ImportPanel({ onImported }: { onImported: () => void }) {
   };
 
   return (
-    <section className="rounded-xl border border-edge p-4">
+    <section className="card p-5">
       <h2 className="mb-1 text-base font-semibold text-paper">Import your history</h2>
       {!verified ? (
         <p className="text-xs text-text-faint">
@@ -308,7 +308,7 @@ function SourceCard({
   const [username, setUsername] = useState("");
   const label = source === "chesscom" ? "chess.com" : "Lichess";
   return (
-    <div className="rounded-lg border border-edge p-3">
+    <div className="rounded-xl border border-edge bg-surface-2 p-3">
       <p className="mb-2 text-sm font-medium text-text">{label}</p>
       {!linked ? (
         <form
@@ -322,10 +322,10 @@ function SourceCard({
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             placeholder={`${label} username…`}
-            className="notation min-w-0 flex-1 rounded border border-edge bg-transparent px-2 py-1 text-sm text-text placeholder:text-text-faint"
+            className="notation min-w-0 flex-1 rounded-lg border border-edge bg-surface px-2.5 py-1.5 text-sm text-text placeholder:text-text-faint"
             aria-label={`${label} username`}
           />
-          <button className="rounded bg-lcd px-3 py-1 text-sm font-medium text-field hover:opacity-90">
+          <button className="btn-primary px-3 py-1 text-sm">
             Connect
           </button>
         </form>
@@ -346,7 +346,7 @@ function SourceCard({
             <button
               onClick={onRun}
               disabled={running}
-              className="rounded bg-lcd px-3 py-1 text-sm font-medium text-field hover:opacity-90 disabled:opacity-50"
+              className="btn-primary px-3 py-1 text-sm"
             >
               {running
                 ? progress

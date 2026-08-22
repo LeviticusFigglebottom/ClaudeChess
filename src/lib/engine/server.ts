@@ -58,9 +58,23 @@ export class EngineWedgedError extends Error {
 /** Grace after `stop` before the process is declared wedged and killed. */
 const STOP_GRACE_MS = 2_000;
 
+/** Ceiling on `uci`→`uciok`/`isready`→`readyok` during init. A healthy
+ * vendored build answers in well under a second; a child that cannot even
+ * start (missing file in a serverless bundle, missing wasm sidecar) exits
+ * without ever speaking UCI — and before this deadline existed, init would
+ * await `uciok` FOREVER, hanging the whole request. Measured on prod
+ * (2026-08-22): every /api/analyze call burned the full 300s function
+ * budget and died with FUNCTION_INVOCATION_TIMEOUT because of exactly
+ * this. A dead child must fail in seconds, with its stderr attached. */
+const INIT_BUDGET_MS = 20_000;
+
 export class ServerEngine {
   private child: ChildProcessWithoutNullStreams | null = null;
   private listeners = new Set<(line: string) => void>();
+  /** Pending waitFor rejections — settled when the child dies. */
+  private pendingRejects = new Set<(err: Error) => void>();
+  private stderrTail = "";
+  private exitDiagnosis: string | null = null;
   private buffer = "";
   private lastMultipv = 1;
   private chain: Promise<unknown> = Promise.resolve();
@@ -100,10 +114,25 @@ export class ServerEngine {
         for (const listener of [...this.listeners]) listener(line);
       }
     });
+    // A child that dies (spawn failure, missing engine file, crash) must
+    // reject every pending wait IMMEDIATELY — otherwise a request awaits
+    // `uciok`/`bestmove` from a corpse until the platform kills it.
+    this.child.stderr.setEncoding("utf8");
+    this.child.stderr.on("data", (chunk: string) => {
+      this.stderrTail = (this.stderrTail + chunk).slice(-2000);
+    });
+    this.child.on("error", (err) => this.failPending(`engine process error: ${err.message}`));
+    this.child.on("exit", (code, signal) => {
+      // `quit()`/`destroy()` clear this.child first — only an UNEXPECTED
+      // death reaches pending waiters here.
+      if (this.child !== null) {
+        this.failPending(`engine process exited (code ${code}, signal ${signal})`);
+      }
+    });
 
     const ready = this.waitFor((line) => line === "uciok");
     this.send("uci");
-    await ready;
+    await this.withInitDeadline(ready, "uciok");
     if (this.variant === "chess960") this.send("setoption name UCI_Chess960 value true");
     if (fairy) {
       this.send(
@@ -113,7 +142,42 @@ export class ServerEngine {
     this.send(`setoption name Hash value ${opts.hashMb ?? 128}`);
     const readyOk = this.waitFor((line) => line === "readyok");
     this.send("isready");
-    await readyOk;
+    await this.withInitDeadline(readyOk, "readyok");
+  }
+
+  /** Reject every pending wait and mark the instance dead (child died). */
+  private failPending(reason: string): void {
+    this.exitDiagnosis = `${reason}${this.stderrTail ? ` — stderr: ${this.stderrTail.trim().slice(-500)}` : ""}`;
+    this.dead = true;
+    this.child = null;
+    const rejects = [...this.pendingRejects];
+    this.pendingRejects.clear();
+    this.listeners.clear();
+    for (const reject of rejects) reject(new Error(this.exitDiagnosis));
+  }
+
+  private withInitDeadline(wait: Promise<string>, label: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const detail = this.exitDiagnosis ?? this.stderrTail.trim().slice(-500) ?? "";
+        this.destroy();
+        reject(
+          new Error(
+            `engine failed to reach ${label} within ${INIT_BUDGET_MS / 1000}s${detail ? ` — ${detail}` : ""}`
+          )
+        );
+      }, INIT_BUDGET_MS);
+      wait.then(
+        (line) => {
+          clearTimeout(timer);
+          resolve(line);
+        },
+        (err: Error) => {
+          clearTimeout(timer);
+          reject(err);
+        }
+      );
+    });
   }
 
   /**
@@ -168,8 +232,10 @@ export class ServerEngine {
           graceTimer = setTimeout(() => {
             const infos = [...byMultipv.values()].sort((a, b) => a.multipv - b.multipv);
             const reachedDepth = infos.reduce((max, info) => Math.max(max, info.depth ?? 0), 0);
-            this.destroy();
+            // Reject BEFORE destroy: destroy also fails the pending `done`
+            // waiter, and the race must settle on the wedge verdict.
             reject(new EngineWedgedError(reachedDepth, infos));
+            this.destroy();
           }, STOP_GRACE_MS);
         }, budget);
       });
@@ -198,15 +264,18 @@ export class ServerEngine {
 
   /** Kill the child outright and mark the instance dead (watchdog path). */
   private destroy(): void {
+    const child = this.child;
+    this.child = null;
     this.dead = true;
-    if (this.child) {
+    if (child) {
       try {
-        this.child.kill("SIGKILL");
+        child.kill("SIGKILL");
       } catch {
         // already gone
       }
-      this.child = null;
     }
+    // Any wait still pending can never resolve now.
+    this.failPending("engine process destroyed by watchdog");
   }
 
   newGame(): void {
@@ -215,14 +284,16 @@ export class ServerEngine {
 
   quit(): void {
     this.dead = true;
-    if (!this.child) return;
+    const child = this.child;
+    this.child = null;
+    if (!child) return;
     try {
-      this.send("quit");
+      child.stdin.write("quit\n");
     } catch {
       // already gone
     }
-    this.child.kill();
-    this.child = null;
+    child.kill();
+    this.failPending("engine quit");
   }
 
   private enqueue<T>(task: () => Promise<T>): Promise<T> {
@@ -237,14 +308,23 @@ export class ServerEngine {
   }
 
   private waitFor(predicate: (line: string) => boolean): Promise<string> {
-    return new Promise((resolve) => {
+    if (this.dead) {
+      return Promise.reject(new Error(this.exitDiagnosis ?? "server engine is dead"));
+    }
+    return new Promise((resolve, reject) => {
+      const rejectOnce = (err: Error) => {
+        this.listeners.delete(listener);
+        reject(err);
+      };
       const listener = (line: string) => {
         if (predicate(line)) {
           this.listeners.delete(listener);
+          this.pendingRejects.delete(rejectOnce);
           resolve(line);
         }
       };
       this.listeners.add(listener);
+      this.pendingRejects.add(rejectOnce);
     });
   }
 }

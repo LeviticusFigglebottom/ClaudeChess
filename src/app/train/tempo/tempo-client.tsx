@@ -49,7 +49,7 @@ export function TempoClient() {
             </p>
           ) : (
             <div className="flex flex-col gap-4">
-              <div className="rounded-xl border border-edge p-4">
+              <div className="card p-4">
                 <h2 className="mb-1 text-sm font-semibold text-paper">
                   The number (over {report.gamesCovered} games)
                 </h2>
@@ -87,7 +87,7 @@ function CurveTable({ name, curve, flat }: { name: string; curve: CurvePoint[]; 
   if (curve.length === 0) return null;
   const max = Math.max(...curve.map((point) => point.meanWpLoss), 1);
   return (
-    <div className="rounded-xl border border-edge p-4">
+    <div className="card p-4">
       <h3 className="mb-2 text-sm font-semibold text-paper">{name}</h3>
       <div className="flex flex-col gap-1">
         {curve.map((point) => (

@@ -43,7 +43,7 @@ export function PostmortemClient() {
         </p>
       ) : (
         <div className="flex flex-col gap-4 lg:max-w-xl">
-          <div className="rounded-xl border border-edge p-4">
+          <div className="card p-4">
             <h2 className="mb-2 text-sm font-semibold text-paper">
               Verdicts over {metric.total} answers
             </h2>
@@ -62,7 +62,7 @@ export function PostmortemClient() {
                 ))}
             </ul>
           </div>
-          <div className="rounded-xl border border-edge p-4">
+          <div className="card p-4">
             <h3 className="mb-2 text-sm font-semibold text-paper">
               RIGHT_MOVE_WRONG_REASON over time
             </h3>

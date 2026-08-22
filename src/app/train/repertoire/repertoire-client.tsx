@@ -96,7 +96,7 @@ export function RepertoireClient() {
         <button
           onClick={() => void act("build")}
           disabled={busy !== null}
-          className="rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90 disabled:opacity-50"
+          className="btn-primary px-4 py-1.5 text-sm"
         >
           {busy === "build" ? "Expanding…" : "Expand tree"}
         </button>
@@ -114,7 +114,7 @@ export function RepertoireClient() {
           <DrillPanel due={due} onGraded={() => void reload()} />
         </div>
         <div className="w-full lg:flex-1">
-          <div className="rounded-xl border border-edge p-4">
+          <div className="card p-4">
             <h2 className="mb-2 text-sm font-semibold text-paper">To learn — ranked by EV / cost</h2>
             {toLearn.length === 0 ? (
               <p className="text-sm text-text-faint">Expand the tree to get a list.</p>
@@ -172,7 +172,7 @@ function DrillPanel({ due, onGraded }: { due: Node[]; onGraded: () => void }) {
 
   if (!node || !position) {
     return (
-      <div className="rounded-xl border border-edge p-4">
+      <div className="card p-4">
         <h2 className="mb-1 text-sm font-semibold text-paper">Drill (SM-2)</h2>
         <p className="text-sm text-text-faint">
           Nothing due. Learn a move by drilling it from the to-learn list — expand the tree
