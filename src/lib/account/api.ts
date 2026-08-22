@@ -55,8 +55,12 @@ export async function getAuthShape(): Promise<AuthShape | null> {
   return {
     id: user.id,
     isAnonymous: user.is_anonymous ?? false,
-    email: user.email ?? null,
-    emailConfirmedAt: user.email_confirmed_at ?? null,
+    // GoTrue reports anonymous users with email "" (empty string), not
+    // null. users.email carries a UNIQUE constraint, and '' is a VALUE —
+    // the second anonymous user would collide with the first (found live:
+    // 23505 users_email_unique, Key (email)=()). NULLs coexist; normalize.
+    email: user.email || null,
+    emailConfirmedAt: user.email_confirmed_at || null,
   };
 }
 

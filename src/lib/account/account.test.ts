@@ -118,6 +118,20 @@ describe("ensureUser (anonymous-first)", () => {
     expect(b.user.handle).not.toBe("Wanted-Handle"); // citext collision → generated fallback
     expect(b.created).toBe(true);
   });
+
+  it("GoTrue empty-string emails: multiple anonymous users all provision (deployed finding)", async () => {
+    // The live auth service reports anonymous users with email "" — a VALUE
+    // under the users.email unique constraint ('' collides with '', NULLs
+    // coexist). Every anonymous visitor after the first failed to provision
+    // on the first real deployment; pinned here against the real schema.
+    const a = await ensureUser(t.db, { ...anonAuth(), email: "" });
+    const b = await ensureUser(t.db, { ...anonAuth(), email: "" });
+    expect(a.created).toBe(true);
+    expect(b.created).toBe(true);
+    expect(a.user.email).toBeNull();
+    expect(b.user.email).toBeNull();
+    expect(a.user.id).not.toBe(b.user.id);
+  });
 });
 
 describe("GATE: anonymous→permanent conversion preserves history and preferences", () => {
