@@ -50,8 +50,19 @@ export function TrainHub() {
   return (
     <div>
       <h1 className="mb-1 text-2xl font-bold text-paper">Train</h1>
-      <p className="mb-5 text-sm text-text-faint">
+      <p className="mb-1 text-sm text-text-faint">
         Diagnostic instruments over your own games — import and analyze a few games and every trainer lights up.
+      </p>
+      <p className="mb-5 text-sm text-text-faint">
+        New here? Start with{" "}
+        <Link href="/puzzles" className="text-brilliant hover:underline">
+          themed puzzle decks
+        </Link>{" "}
+        or{" "}
+        <Link href="/analysis" className="text-brilliant hover:underline">
+          the classics on the analysis board
+        </Link>{" "}
+        — both work without any games of your own.
       </p>
       <div className="grid gap-4 md:grid-cols-2">
         {TRAINERS.map((trainer) => (

@@ -35,6 +35,25 @@ interface RatingPayload {
 
 type Phase = "loading" | "presenting" | "solving" | "solved" | "failed";
 
+/**
+ * Starter decks: one-click Lichess-theme filters so a new player (guests
+ * included) has somewhere obvious to begin. Labels are ours; theme ids are
+ * the puzzle set's. All counts are four-digit in the shipped 31k subset
+ * except skewer/backRank (still ~700 each).
+ */
+const THEME_PRESETS: { label: string; themes: string | null }[] = [
+  { label: "All", themes: null },
+  { label: "Forks", themes: "fork" },
+  { label: "Pins", themes: "pin" },
+  { label: "Skewers", themes: "skewer" },
+  { label: "Hanging pieces", themes: "hangingPiece" },
+  { label: "Mate in 1", themes: "mateIn1" },
+  { label: "Mate in 2", themes: "mateIn2" },
+  { label: "Back rank", themes: "backRankMate" },
+  { label: "Discovered attacks", themes: "discoveredAttack" },
+  { label: "Endgames", themes: "endgame" },
+];
+
 export function PuzzlesClient() {
   const auth = useAuth();
   const { prefs } = usePrefs();
@@ -47,6 +66,10 @@ export function PuzzlesClient() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<PuzzleMode>("rated");
   const modeRef = useRef<PuzzleMode>("rated");
+  // Theme preset (rated mode): narrows the pool server-side. Works for
+  // guests too — a themed starter deck beats an empty toolbox.
+  const [themeFilter, setThemeFilter] = useState<string | null>(null);
+  const themeFilterRef = useRef<string | null>(null);
   const ownQueueRef = useRef<PuzzlePayload[] | null>(null);
   const ownIndexRef = useRef(0);
   const positionRef = useRef<GamePosition | null>(null);
@@ -131,12 +154,9 @@ export function PuzzlesClient() {
         }, 600);
         return;
       }
-      // §9.2 drill deck entry: /puzzles?themes=a,b narrows the pool to the
-      // fingerprint's motif themes (B1.2).
-      const themes =
-        typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search).get("themes")
-          : null;
+      // Theme narrowing: preset chips and the §9.2 drill deck's
+      // /puzzles?themes=a,b entry (B1.2) both land in themeFilterRef.
+      const themes = themeFilterRef.current;
       const response = await fetch(
         `/api/puzzles/next${themes ? `?themes=${encodeURIComponent(themes)}` : ""}`
       );
@@ -176,9 +196,15 @@ export function PuzzlesClient() {
     }
   }, [announce, play]);
 
-  // ?mode=own deep link (dashboard "drill of the day") — applied before the
-  // first load; an effect (post-hydration) so SSR markup stays mode-agnostic.
+  // ?mode=own and ?themes= deep links (dashboard drill / §9.2 drill deck) —
+  // applied before the first load; an effect (post-hydration) so SSR markup
+  // stays mode-agnostic.
   useEffect(() => {
+    const themesParam = new URLSearchParams(window.location.search).get("themes");
+    if (themesParam) {
+      themeFilterRef.current = themesParam;
+      setThemeFilter(themesParam);
+    }
     if (new URLSearchParams(window.location.search).get("mode") === "own") {
       modeRef.current = "own";
       setMode("own");
@@ -353,6 +379,39 @@ export function PuzzlesClient() {
           </button>
         ))}
       </div>
+      {mode === "rated" && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5" role="group" aria-label="Puzzle themes">
+          {THEME_PRESETS.map((preset) => {
+            const active =
+              preset.themes === null ? themeFilter === null : themeFilter === preset.themes;
+            return (
+              <button
+                key={preset.label}
+                onClick={() => {
+                  if (active) return;
+                  themeFilterRef.current = preset.themes;
+                  setThemeFilter(preset.themes);
+                  setError(null);
+                  void loadNext();
+                }}
+                aria-pressed={active}
+                className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                  active
+                    ? "border-accent bg-surface-3 text-text"
+                    : "border-edge text-text-dim hover:border-edge-strong hover:text-text"
+                }`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+          {themeFilter !== null && !THEME_PRESETS.some((preset) => preset.themes === themeFilter) && (
+            <span className="rounded-full border border-accent bg-surface-3 px-2.5 py-1 text-xs text-text">
+              drill deck: {themeFilter}
+            </span>
+          )}
+        </div>
+      )}
       {error && <p className="mb-3 text-sm text-warn-1">{error}</p>}
       <div className="flex flex-col gap-5 lg:flex-row">
         <div className="w-full max-w-[560px]">

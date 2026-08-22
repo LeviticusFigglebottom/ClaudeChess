@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AccountMenu } from "./account-menu";
+import { RunnerChip } from "./analysis-runner";
 import { BootDiagnostics } from "./boot-diagnostics";
 
 /**
@@ -71,7 +72,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <KnightMark className="h-7 w-7 text-accent" />
               <span className="notation text-base font-bold tracking-tight text-paper">GAMBIT</span>
             </Link>
-            <AccountMenu />
+            <span className="flex min-w-0 items-center gap-3">
+              <RunnerChip />
+              <AccountMenu />
+            </span>
           </div>
         </header>
 

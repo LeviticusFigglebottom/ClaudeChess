@@ -4,6 +4,7 @@ import type { PieceSetId } from "@/lib/prefs/prefs";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GamePosition } from "@/lib/chess";
+import { SAMPLE_GAMES } from "@/lib/chess/sample-games";
 import { GameTree, type TreeNode } from "@/lib/chess/tree";
 import { isValidFen } from "@/lib/chess/position";
 import { openingForEpd } from "@/lib/chess/openings";
@@ -436,6 +437,38 @@ export function AnalysisBoard({ initialGameId }: { initialGameId?: string }) {
             Play
           </button>
         </form>
+
+        <div className="rounded-lg border border-edge px-3 py-2">
+          <p className="mb-1.5 text-sm text-text-dim">
+            Classics to explore
+            {tree.root.children.length === 0 && (
+              <span className="block text-xs text-text-faint">
+                No account needed — load one and the engine annotates it live.
+              </span>
+            )}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {SAMPLE_GAMES.map((sample) => (
+              <button
+                key={sample.id}
+                onClick={() => {
+                  try {
+                    replaceTree(GameTree.fromPgn(sample.pgn));
+                    setCurrentId(0);
+                    setOrientation("white");
+                    setNotice(`${sample.title} — ${sample.players}. ${sample.hint}`);
+                  } catch {
+                    setNotice("Could not load that game.");
+                  }
+                }}
+                title={`${sample.players} — ${sample.blurb}`}
+                className="rounded-full border border-edge px-2.5 py-1 text-xs text-text-dim transition-colors hover:border-edge-strong hover:text-text"
+              >
+                {sample.title}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <details className="rounded-lg border border-edge px-3 py-2">
           <summary className="cursor-pointer select-none text-sm text-text-dim hover:text-text">

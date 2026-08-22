@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "./auth-context";
 
 /**
@@ -160,6 +161,13 @@ function AuthDialog({ mode, onClose }: { mode: "convert" | "signin"; onClose: ()
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // Portal target: the dialog renders inside the header, whose
+  // backdrop-blur makes it the containing block for position:fixed — the
+  // modal would center in the 52px header strip with its top half above
+  // the viewport (the clipped-email bug). document.body has no such
+  // ancestor, so `fixed inset-0` means the real viewport again.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -183,9 +191,10 @@ function AuthDialog({ mode, onClose }: { mode: "convert" | "signin"; onClose: ()
     }
   };
 
-  return (
+  if (!mounted) return null;
+  return createPortal(
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto bg-black/60 p-4"
       role="dialog"
       aria-modal="true"
       aria-label={mode === "convert" ? "Create account" : "Sign in"}
@@ -193,7 +202,7 @@ function AuthDialog({ mode, onClose }: { mode: "convert" | "signin"; onClose: ()
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="card w-full max-w-sm p-5">
+      <div className="card max-h-[92vh] w-full max-w-sm overflow-y-auto p-5">
         <h2 className="mb-1 text-lg font-semibold text-paper">
           {mode === "convert" ? "Create your account" : "Sign in"}
         </h2>
@@ -280,6 +289,7 @@ function AuthDialog({ mode, onClose }: { mode: "convert" | "signin"; onClose: ()
           </form>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -74,7 +74,32 @@ export function FingerprintClient() {
       {report === null ? (
         <p className="text-sm text-text-faint">Loading…</p>
       ) : report.errorPlies === 0 ? (
-        <p className="text-sm text-text-dim">No analyzed mistakes yet — analyze some games first.</p>
+        <div className="card max-w-xl p-5">
+          <p className="text-sm text-text-dim">
+            No analyzed mistakes yet — the fingerprint is built from your own reviewed games.
+          </p>
+          <p className="mt-3 text-sm text-text-dim">Meanwhile, three ways in:</p>
+          <ul className="mt-1.5 list-inside list-disc text-sm text-text-dim">
+            <li>
+              <Link href="/games" className="text-brilliant hover:underline">
+                Import your chess.com / Lichess games
+              </Link>{" "}
+              and analyze them in one click.
+            </li>
+            <li>
+              <Link href="/analysis" className="text-brilliant hover:underline">
+                Load a classic on the analysis board
+              </Link>{" "}
+              — the Deep Blue game is a blunder-spotting drill, no account needed.
+            </li>
+            <li>
+              <Link href="/puzzles" className="text-brilliant hover:underline">
+                Solve themed puzzle decks
+              </Link>{" "}
+              — forks, pins, back-rank mates and more.
+            </li>
+          </ul>
+        </div>
       ) : (
         <div className="flex flex-col gap-6 lg:flex-row">
           <div className="w-full lg:w-[26rem]">

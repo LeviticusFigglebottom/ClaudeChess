@@ -11,12 +11,9 @@ import { FigurineSan } from "@/components/pieces";
 import { usePrefs } from "@/components/prefs-context";
 import { Ribbon, RibbonStrip } from "@/components/ribbon";
 import { useFlag } from "@/components/use-flag";
-import { ApiError } from "@/lib/account/client";
-import {
-  clientBatchCapability,
-  runClientBatchAnalysis,
-  type BatchProgress,
-} from "@/lib/analysis/client-batch";
+import { useAnalysisRunner } from "@/components/analysis-runner";
+import type { BatchProgress } from "@/lib/analysis/client-batch";
+import { analysisRunner } from "@/lib/analysis/runner";
 import { isProvisional } from "@/lib/analysis/verify-rules";
 import { evalLabel, explainPly } from "@/lib/eval/explain";
 import { GamePosition } from "@/lib/chess/position";
@@ -104,13 +101,19 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   const [data, setData] = useState<ReviewPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState(0); // 0 = start position, n = after ply n
-  const [analyzing, setAnalyzing] = useState(false);
-  const [progress, setProgress] = useState<{ analyzed: number; total: number } | null>(null);
-  const [verifying, setVerifying] = useState(0);
-  const [clientPhase, setClientPhase] = useState<BatchProgress | null>(null);
-  const [fallbackNote, setFallbackNote] = useState<string | null>(null);
   const autoResumedRef = useRef(false);
+  const firstLoadRef = useRef(true);
   const liveRef = useRef<HTMLDivElement | null>(null);
+
+  // Analysis runs in the GLOBAL runner (survives navigating to other tabs);
+  // this page derives its progress display from the runner's snapshot.
+  const runnerSnap = useAnalysisRunner();
+  const mine = runnerSnap.current?.gameId === gameId ? runnerSnap.current : null;
+  const analyzing = mine !== null || runnerSnap.queue.some((job) => job.gameId === gameId);
+  const clientPhase = mine?.phase ?? null;
+  const progress = mine?.serverProgress ?? null;
+  const verifying = mine?.serverProgress?.verifyRemaining ?? 0;
+  const fallbackNote = mine?.note ?? null;
 
   const load = useCallback(() => {
     fetch(`/api/games/${gameId}`)
@@ -120,7 +123,12 @@ export function ReviewClient({ gameId }: { gameId: string }) {
         };
         if (!response.ok) throw new Error(body.error?.message ?? `HTTP ${response.status}`);
         setData(body);
-        setCursor(body.plies.length);
+        // Jump to the end on first load only — background-analysis reloads
+        // must not yank the cursor out from under the reader.
+        if (firstLoadRef.current) {
+          firstLoadRef.current = false;
+          setCursor(body.plies.length);
+        }
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load."));
   }, [gameId]);
@@ -129,94 +137,33 @@ export function ReviewClient({ gameId }: { gameId: string }) {
     if (auth.status === "ready") load();
   }, [auth.status, load]);
 
-  /** Server-side fallback: the chunked /api/analyze loop. */
-  const serverAnalyze = useCallback(async () => {
-    try {
-      let retried = false;
-      let stalled = 0;
-      let lastState = "";
-      for (;;) {
-        const response = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gameId }),
-        });
-        interface ChunkPayload {
-          analyzedPlies?: number;
-          progress?: { analyzed: number; total: number };
-          verifyRemaining?: number;
-          done?: boolean;
-          error?: { message: string };
-        }
-        let body: ChunkPayload | null = null;
-        try {
-          body = (await response.json()) as ChunkPayload;
-        } catch {
-          // Platform error pages (e.g. a gateway timeout) are not JSON.
-        }
-        if (body === null) {
-          // Retry a transient service failure once before surfacing it.
-          if (!retried && response.status >= 500) {
-            retried = true;
-            continue;
-          }
-          throw new ApiError(response.status, "analyze", `analysis service error (HTTP ${response.status})`, null);
-        }
-        if (!response.ok) throw new ApiError(response.status, "analyze", body.error?.message ?? "failed", body);
-        if (body.progress) setProgress(body.progress);
-        setVerifying(body.verifyRemaining ?? 0);
-        if (body.done) break;
-        // Stall guard: chunk calls that repeatedly make zero progress would
-        // loop forever — stop honestly and keep what was analyzed.
-        const state = `${body.progress?.analyzed ?? 0}:${body.verifyRemaining ?? 0}`;
-        stalled = state === lastState && (body.analyzedPlies ?? 0) === 0 ? stalled + 1 : 0;
-        lastState = state;
-        if (stalled >= 6) {
-          throw new Error("Analysis stalled — keeping the plies analyzed so far. Try again later.");
-        }
-      }
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Analysis failed.");
-    } finally {
-      setProgress(null);
-      setVerifying(0);
-    }
-  }, [gameId, load]);
-
   /**
-   * Client-first analysis (§3.3 revision): the browser's multi-threaded
-   * engine does the searching where capability allows — several times
-   * faster than the 1-vCPU serverless fallback — streaming results to the
-   * server per position. Capability detection, not a user setting.
+   * Analysis is delegated to the GLOBAL runner (client engine first, server
+   * chunk loop as fallback — both live in src/lib/analysis/runner so the
+   * work survives navigating to other tabs). This page only enqueues and
+   * subscribes.
    */
-  const analyze = useCallback(async () => {
-    setAnalyzing(true);
+  const analyze = useCallback(() => {
     setError(null);
-    setFallbackNote(null);
-    try {
-      const capability = clientBatchCapability();
-      if (capability.ok) {
-        const result = await runClientBatchAnalysis(
-          gameId,
-          (phaseProgress) => setClientPhase(phaseProgress),
-          () => load() // each pass completion lands visible results
-        );
-        setClientPhase(null);
-        if (result.ok) {
-          load();
-          return;
+    const opponent = data
+      ? `vs ${data.game.userColor === "black" ? data.game.whiteName : data.game.blackName}`
+      : "this game";
+    analysisRunner.enqueue([{ gameId, label: opponent }], { front: true });
+  }, [gameId, data]);
+
+  // Refresh the review as runner passes land; surface a failed run once.
+  useEffect(() => {
+    return analysisRunner.subscribeGame(gameId, (event) => {
+      if (event === "pass") load();
+      if (event === "done") {
+        const result = analysisRunner.getSnapshot().lastResult;
+        if (result?.gameId === gameId && !result.ok && result.error !== "cancelled") {
+          setError(result.error ?? "Analysis failed.");
         }
-        setFallbackNote(`client analysis stopped (${result.error}) — finishing on the server`);
-      } else {
-        setFallbackNote(`server analysis (${capability.reason})`);
+        load();
       }
-      await serverAnalyze();
-    } finally {
-      setAnalyzing(false);
-      setClientPhase(null);
-    }
-  }, [gameId, load, serverAnalyze]);
+    });
+  }, [gameId, load]);
 
   // Resume interrupted analysis automatically: partially-analyzed games
   // (a closed tab mid-run) pick up where they stopped, once per page view.
@@ -231,7 +178,7 @@ export function ReviewClient({ gameId }: { gameId: string }) {
     );
     if (someAnalyzed && incomplete) {
       autoResumedRef.current = true;
-      void analyze();
+      analyze();
     }
   }, [data, analyzing, analyze]);
 
