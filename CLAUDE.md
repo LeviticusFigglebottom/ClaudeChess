@@ -48,6 +48,7 @@ npx tsx scripts/calibrate-fit.mts --propose|--finalize   # fit → bot-calibrati
 - Design tokens (B2.3) live in `globals.css`. **`--flag` appears in exactly two places: flagfall and BLUNDER.** A third use is a bug, and there is a test pinning BLUNDER as its only classification. `prefers-reduced-motion` means instant state changes, not shortened animations.
 - Bot policy is `src/lib/engine/bot.ts` (pure; §6 exactly); shipping params come from `src/lib/engine/bot-calibration.json` — **uncalibrated constants do not ship** (Phase 1 gate). The calibration arena/fit pipeline is `scripts/arena.mts`, `scripts/calibration-*.sh`, `scripts/calibrate-fit.mts`; evidence JSONLs live in `data/calibration/`.
 - Bot games charge real wall time to the bot's clock; there is deliberately no 1+0 vs bots (the deep pass costs seconds) — bullet arrives with premoves in Phase 4.
+- **Remote-container constraint (measured 2026-08-22):** the remote session's container freezes within minutes of the session going idle, and background process trees can be killed by worker restarts — long arena runs only progress while the session holds active foreground waits (sanctioned `until …; do sleep 30; done` loops; bare leading `sleep` is blocked). The arena checkpoints every game (JSONL append) and resumes from the shard's line count, so an interruption costs only the in-flight games.
 
 ## Testing expectations
 
