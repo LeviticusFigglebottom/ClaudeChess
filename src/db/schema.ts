@@ -404,15 +404,56 @@ export const calibrationAttempts = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     fen: text("fen").notNull(),
+    /** A1.4: calibration on 960/variant positions is a separate population. */
+    variant: variantEnum("variant").notNull().default("standard"),
+    /** Source ply when the position came from the user's own games. */
+    plyId: bigint("ply_id", { mode: "number" }).references(() => plies.id, {
+      onDelete: "set null",
+    }),
     /** { phase, openness, materialBalance, sideAttacking, kingSafetyDelta, hasImbalance } */
     positionTags: jsonb("position_tags").$type<Record<string, string | number | boolean>>(),
     predictedWp: real("predicted_wp").notNull(),
     actualWp: real("actual_wp").notNull(),
+    /** §9.1 secondary score: empirical outcome WP at the user's band, when in-book. */
+    empiricalWp: real("empirical_wp"),
     squaredError: real("squared_error").notNull(),
+    isCritical: boolean("is_critical").notNull().default(false),
     respondedAt: timestamp("responded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index("calibration_user_idx").on(table.userId, table.respondedAt)]
 );
+
+/** §9.3 critical-position recognition rounds ("critical / routine" in 3s). */
+export const tempoAttempts = pgTable(
+  "tempo_attempts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    plyId: bigint("ply_id", { mode: "number" })
+      .notNull()
+      .references(() => plies.id, { onDelete: "cascade" }),
+    guessedCritical: boolean("guessed_critical").notNull(),
+    actualCritical: boolean("actual_critical").notNull(),
+    answeredInMs: integer("answered_in_ms").notNull(),
+    respondedAt: timestamp("responded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("tempo_user_idx").on(table.userId, table.respondedAt)]
+);
+
+/**
+ * LLM response cache (§10, C5): explanations keyed by
+ * (motifChain, evidenceHash), coach verdicts by (fen, san, reasoning hash).
+ * The same blunder recurs across users — cache hits cost zero.
+ */
+export const llmCache = pgTable("llm_cache", {
+  key: text("key").primaryKey(),
+  kind: text("kind").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  model: text("model").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const repertoireNodes = pgTable(
   "repertoire_nodes",
@@ -432,6 +473,19 @@ export const repertoireNodes = pgTable(
     evPerNode: real("ev_per_node").notNull().default(0),
     status: repertoireStatusEnum("status").notNull().default("unseen"),
     lastReviewedAt: timestamp("last_reviewed_at", { withTimezone: true }),
+    /** Display SAN of the move at this node. */
+    san: text("san"),
+    /** §9.4 EV math: points per 100 games, memorization cost, EV/cost. */
+    scoreDelta: real("score_delta").notNull().default(0),
+    cost: real("cost").notNull().default(1),
+    priority: real("priority").notNull().default(0),
+    /** True when this node was flagged from the user's own played games. */
+    isLeak: boolean("is_leak").notNull().default(false),
+    /** SM-2 drilling state (§9.4). */
+    easeFactor: real("ease_factor").notNull().default(2.5),
+    intervalDays: real("interval_days").notNull().default(0),
+    repetitions: integer("repetitions").notNull().default(0),
+    dueAt: timestamp("due_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("repertoire_user_pos_idx").on(table.userId, table.color, table.fen, table.moveUci),

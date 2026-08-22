@@ -43,6 +43,8 @@ export interface Prefs {
     /** Explicit app-level reduce-motion (system prefers-reduced-motion always wins too). */
     reduceMotion: boolean;
   };
+  /** §9 flag module: per-user overrides on top of the env defaults (Labs panel). */
+  labs: Partial<Record<string, boolean>>;
 }
 
 export const DEFAULT_PREFS: Prefs = {
@@ -58,6 +60,7 @@ export const DEFAULT_PREFS: Prefs = {
     highContrastBoard: false,
     reduceMotion: false,
   },
+  labs: {},
 };
 
 /** Board themes are token pairs, not textures — no asset, no license burden. */
@@ -80,6 +83,7 @@ export function normalizePrefs(raw: unknown): Prefs {
     sound: { ...DEFAULT_PREFS.sound, ...parsed.sound },
     evalBar: { ...DEFAULT_PREFS.evalBar, ...parsed.evalBar },
     accessibility: { ...DEFAULT_PREFS.accessibility, ...parsed.accessibility },
+    labs: { ...DEFAULT_PREFS.labs, ...parsed.labs },
   };
 }
 

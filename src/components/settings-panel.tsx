@@ -1,6 +1,7 @@
 "use client";
 
 import { BOARD_THEMES, type BoardThemeId, type PieceSetId } from "@/lib/prefs/prefs";
+import { isEnabled, type FeatureFlag } from "@/lib/flags";
 import { usePrefs } from "./prefs-context";
 
 /**
@@ -183,8 +184,35 @@ export function SettingsPanel() {
               className="accent-[var(--lcd)]"
             />
           </label>
+          <p className="mt-2 mb-1 text-xs uppercase tracking-wide text-text-faint">
+            Labs — original trainers (§9, ship dark by default)
+          </p>
+          {LABS_FLAGS.map(({ flag, name }) => (
+            <label key={flag} className={`${row} cursor-pointer`}>
+              <span className={label}>{name}</span>
+              <input
+                type="checkbox"
+                checked={isEnabled(flag) || prefs.labs[flag] === true}
+                disabled={isEnabled(flag)}
+                title={isEnabled(flag) ? "Enabled for everyone on this deployment" : undefined}
+                onChange={(event) =>
+                  update({ labs: { ...prefs.labs, [flag]: event.target.checked } })
+                }
+                className="accent-[var(--lcd)]"
+              />
+            </label>
+          ))}
         </div>
       </div>
     </details>
   );
 }
+
+const LABS_FLAGS: { flag: FeatureFlag; name: string }[] = [
+  { flag: "FF_VARIANTS", name: "Variants: three-check + King of the Hill" },
+  { flag: "FF_CALIBRATION", name: "Eval calibration trainer" },
+  { flag: "FF_FINGERPRINT", name: "Blunder fingerprint" },
+  { flag: "FF_TEMPO", name: "Time allocation trainer" },
+  { flag: "FF_REPERTOIRE", name: "Repertoire EV optimizer" },
+  { flag: "FF_POSTMORTEM", name: "Interrogative post-mortem" },
+];

@@ -41,12 +41,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <Link href="/puzzles" className="text-sm text-text-dim hover:text-text">
                   Puzzles
                 </Link>
-                <span
-                  className="cursor-default text-sm text-text-faint"
-                  title="Phase 5 — flag-gated"
-                >
+                <Link href="/train" className="text-sm text-text-dim hover:text-text">
                   Train
-                </span>
+                </Link>
                 <div className="ml-auto flex items-center gap-4">
                   <Link
                     href="/engine-check"

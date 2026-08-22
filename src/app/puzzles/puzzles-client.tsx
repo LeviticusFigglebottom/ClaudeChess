@@ -63,7 +63,15 @@ export function PuzzlesClient() {
     setError(null);
     attemptedRef.current = false;
     try {
-      const response = await fetch("/api/puzzles/next");
+      // §9.2 drill deck entry: /puzzles?themes=a,b narrows the pool to the
+      // fingerprint's motif themes (B1.2).
+      const themes =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("themes")
+          : null;
+      const response = await fetch(
+        `/api/puzzles/next${themes ? `?themes=${encodeURIComponent(themes)}` : ""}`
+      );
       const body = (await response.json()) as {
         puzzle?: PuzzlePayload;
         rating?: RatingPayload;

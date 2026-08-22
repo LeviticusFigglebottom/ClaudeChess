@@ -8,6 +8,7 @@ import { GameBoard } from "@/components/game-board";
 import { FigurineSan } from "@/components/pieces";
 import { usePrefs } from "@/components/prefs-context";
 import { Ribbon, RibbonStrip } from "@/components/ribbon";
+import { useFlag } from "@/components/use-flag";
 import { ApiError } from "@/lib/account/client";
 import { GamePosition } from "@/lib/chess/position";
 import type { VariantId } from "@/lib/chess/variant";
@@ -315,7 +316,11 @@ export function ReviewClient({ gameId }: { gameId: string }) {
             figurine={prefs.moveList === "figurine"}
             pieceSet={prefs.pieceSet}
           />
-          {current && <PlyDetail ply={current} variant={game.variant as VariantId} />}
+          {current && (
+            <PostmortemGate gameId={gameId} ply={current}>
+              <PlyDetail ply={current} variant={game.variant as VariantId} />
+            </PostmortemGate>
+          )}
         </div>
       </div>
 
@@ -453,6 +458,128 @@ function MoveList({
 }
 
 /** C3: mechanism chain + evidence for the selected ply. */
+interface PmPrompt {
+  plyId: number;
+  ply: number;
+  answered: boolean;
+}
+
+/**
+ * §9.5: on an interrogable critical ply, ask what the player was thinking
+ * BEFORE the engine's verdict (the PlyDetail with lines and motifs) is
+ * shown. Max 5 per game, chosen server-side; skippable; the coach's verdict
+ * lands inline. Behind FF_POSTMORTEM.
+ */
+function PostmortemGate({
+  gameId,
+  ply,
+  children,
+}: {
+  gameId: string;
+  ply: PlyPayload;
+  children: React.ReactNode;
+}) {
+  const enabled = useFlag("FF_POSTMORTEM");
+  const [prompts, setPrompts] = useState<PmPrompt[] | null>(null);
+  const [llm, setLlm] = useState(false);
+  const [done, setDone] = useState<Set<number>>(new Set());
+  const [reasoning, setReasoning] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ verdict: string; critique: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) return;
+    fetch(`/api/train/postmortem?gameId=${gameId}`)
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((body: { prompts: PmPrompt[]; llm: boolean } | null) => {
+        if (body) {
+          setPrompts(body.prompts);
+          setLlm(body.llm);
+        }
+      })
+      .catch(() => undefined);
+  }, [enabled, gameId]);
+
+  const prompt = prompts?.find((row) => row.ply === ply.ply);
+  useEffect(() => {
+    setResult(null);
+    setReasoning("");
+    setError(null);
+  }, [ply.ply]);
+
+  if (!enabled || !llm || !prompt || prompt.answered || done.has(prompt.plyId)) {
+    return <>{children}</>;
+  }
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plyId: prompt.plyId, userReasoning: reasoning }),
+      });
+      const body = (await response.json()) as {
+        verdict?: string;
+        critique?: string;
+        error?: { message: string };
+      };
+      if (!response.ok || !body.verdict) throw new Error(body.error?.message ?? "Coach failed.");
+      setResult({ verdict: body.verdict, critique: body.critique ?? "" });
+      setDone((current) => new Set(current).add(prompt.plyId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Coach failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-lcd/40 p-3">
+      {result === null ? (
+        <>
+          <p className="text-sm text-text">
+            Before the engine speaks — what were you worried about here? What did you think
+            their plan was?
+          </p>
+          <textarea
+            value={reasoning}
+            onChange={(event) => setReasoning(event.target.value)}
+            rows={3}
+            className="mt-2 w-full rounded border border-edge bg-transparent px-2 py-1.5 text-sm text-text"
+            placeholder="I thought…"
+            aria-label="Your reasoning at this position"
+          />
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              onClick={() => void submit()}
+              disabled={busy || reasoning.trim().length < 3}
+              className="rounded bg-lcd px-4 py-1.5 text-sm font-medium text-field hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? "Thinking…" : "Answer, then reveal"}
+            </button>
+            <button
+              onClick={() => setDone((current) => new Set(current).add(prompt.plyId))}
+              className="text-sm text-text-faint hover:text-text-dim"
+            >
+              skip
+            </button>
+            {error && <span className="text-xs text-warn-1">{error}</span>}
+          </div>
+        </>
+      ) : (
+        <div>
+          <p className="notation text-sm text-paper">{result.verdict}</p>
+          <p className="mt-1 text-sm text-text-dim">{result.critique}</p>
+        </div>
+      )}
+      {result !== null && <div className="mt-2">{children}</div>}
+    </div>
+  );
+}
+
 function PlyDetail({ ply, variant }: { ply: PlyPayload; variant: VariantId }) {
   const refutationSan = useMemo(() => {
     if (!ply.tags.length || !ply.pv1) return null;

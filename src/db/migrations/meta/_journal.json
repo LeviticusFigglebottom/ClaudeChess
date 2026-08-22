@@ -78,6 +78,13 @@
       "when": 1787362720987,
       "tag": "0010_strange_fallen_one",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787365828202,
+      "tag": "0011_lush_vivisector",
+      "breakpoints": true
     }
   ]
 }
