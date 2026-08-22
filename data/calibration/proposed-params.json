@@ -109,11 +109,12 @@
       "extrapolated": true
     },
     "2000": {
-      "pBlunder": 0.13954407846818795,
-      "temperature": 2.8954407846818793,
-      "formulaEquivalent": 1531,
+      "pBlunder": 0.182,
+      "temperature": 3.32,
+      "formulaEquivalent": 1403,
       "segment": "d18",
-      "extrapolated": true
+      "extrapolated": true,
+      "method": "bisection (validation probe blowout): r*=1531 curve inversion measured 2512+/-349, r*=1470 measured 2269+/-200, r*=1403 measured 2035+/-153 (PASS). MultiPV varies per band inside d18 (1800=MPV12, 2000=MPV10), so cross-band curve nodes under-predicted this region; same-shape slope ~4.0 Elo per formula-r point."
     },
     "2200": {
       "pBlunder": 0.09850889233369109,
