@@ -1,4 +1,5 @@
-import { and, desc, eq, isNotNull, sql, notInArray } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql, notInArray, gte } from "drizzle-orm";
+import { ANALYSIS_SETTINGS } from "@/lib/eval";
 import { games, plies, tempoAttempts } from "@/db/schema";
 import type { Db } from "@/lib/account/types";
 import { AccountError } from "@/lib/account/types";
@@ -88,6 +89,8 @@ export async function tempoReport(
       and(
         eq(games.userId, userId),
         eq(plies.degraded, false),
+        // Progressive depth: provisional (pass-1) plies are §9-excluded.
+        gte(plies.analyzedAtDepth, ANALYSIS_SETTINGS.review.depth),
         eq(games.variant, variant),
         isNotNull(plies.timeSpentMs),
         isNotNull(plies.wpLoss)
@@ -167,6 +170,8 @@ export async function nextRecognitionPosition(
       and(
         eq(games.userId, userId),
         eq(plies.degraded, false),
+        // Progressive depth: provisional (pass-1) plies are §9-excluded.
+        gte(plies.analyzedAtDepth, ANALYSIS_SETTINGS.review.depth),
         eq(games.variant, variant),
         isNotNull(plies.wpBefore),
         eq(plies.isCritical, wantCritical),

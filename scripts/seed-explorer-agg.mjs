@@ -35,7 +35,10 @@ let guardChecked = false;
 async function checkGuard() {
   guardChecked = true;
   const [row] = await sql`SELECT obj_description('explorer_agg'::regclass) AS comment`;
-  if (meta && row?.comment === meta.version) {
+  // The comment carries "version | sampling" — the version prefix is what
+  // the guard compares (sampling is annotation, not identity).
+  const storedVersion = row?.comment ? row.comment.split(" | ")[0] : null;
+  if (meta && storedVersion === meta.version) {
     console.log(`explorer-agg: already at ${meta.version} (source ${meta.source}, built ${meta.builtAt}) — skipping`);
     await sql.end();
     process.exit(0);
@@ -79,8 +82,8 @@ for await (const line of lines) {
 }
 await flush();
 if (meta) {
-  await sql`SELECT set_config('app.dummy', '', true)`;
-  await sql.unsafe(`COMMENT ON TABLE explorer_agg IS '${meta.version.replaceAll("'", "''")}'`);
+  const stamp = meta.sampling ? `${meta.version} | ${meta.sampling}` : meta.version;
+  await sql.unsafe(`COMMENT ON TABLE explorer_agg IS '${stamp.replaceAll("'", "''")}'`);
 }
 const [{ count }] = await sql`SELECT count(*)::int AS count FROM explorer_agg`;
 console.log(`explorer-agg: upserted ${written} (source ${meta?.source ?? "unversioned"}), table now holds ${count} rows`);
