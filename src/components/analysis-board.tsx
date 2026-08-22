@@ -2,13 +2,25 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GamePosition } from "@/lib/chess";
+import { GameTree, type TreeNode } from "@/lib/chess/tree";
+import { isValidFen } from "@/lib/chess/position";
 import { openingForEpd } from "@/lib/chess/openings";
+import type { VariantId } from "@/lib/chess/variant";
 import { classifyMove, type Classification, type WhitePovEval } from "@/lib/eval";
 import { ClassificationIcon } from "./classification-icon";
 import { FigurineSan } from "./pieces";
 import { GameBoard } from "./game-board";
 import { usePrefs } from "./prefs-context";
+import { useAuth } from "./auth-context";
 import { useEngineAnalysis } from "./use-engine-analysis";
+
+/**
+ * Analysis board (A3.1) on the variation tree (A3.2): both sides playable,
+ * branching lines with promote/delete/comment, streaming review-depth
+ * engine analysis of the current node, FEN/PGN import (Lichess literate
+ * PGNs load their suggested lines as variations), and studies saved to the
+ * account (RAV PGN — never plies rows, so variations never feed §9 stats).
+ */
 
 function formatEval(evaluation: WhitePovEval, format: "cp" | "wp" | "both", wpWhite: number): string {
   const cpText =
@@ -23,48 +35,45 @@ function formatEval(evaluation: WhitePovEval, format: "cp" | "wp" | "both", wpWh
   return `${cpText} · ${wpText}`;
 }
 
-function gameOverText(position: GamePosition): string | null {
-  if (position.isCheckmate()) return `Checkmate — ${position.turn === "w" ? "Black" : "White"} wins`;
-  if (position.isStalemate()) return "Draw — stalemate";
-  if (position.isThreefold()) return "Draw — threefold repetition";
-  if (position.isInsufficientMaterial()) return "Draw — insufficient material";
-  if (position.isFiftyMoves()) return "Draw — fifty-move rule";
-  return null;
-}
-
-interface PendingClassification {
-  moveIndex: number;
+interface PendingBadge {
+  nodeId: number;
   playedUci: string;
   moverColor: "w" | "b";
   legalMoveCount: number;
   epdAfter: string;
-  /** Pre-move engine view; absent when the move was played before analysis produced lines. */
   baseline: { bestUci: string; wpWhiteBefore: number } | null;
 }
 
-/**
- * Free analysis board: both sides playable, streaming review-depth analysis,
- * live move badges (B2.4 preview: BOOK from the openings dataset, BEST and
- * the loss bands from consecutive depth-12+ evals — the full §4 pipeline
- * with BRILLIANT/GREAT/MISS inputs is Phase 2's batch review).
- */
-export function AnalysisBoard() {
+export function AnalysisBoard({ initialGameId }: { initialGameId?: string }) {
   const { prefs } = usePrefs();
-  const positionRef = useRef<GamePosition | null>(null);
-  positionRef.current ??= GamePosition.initial();
-  const position = positionRef.current;
-
-  const [fen, setFen] = useState(position.fen());
-  const [history, setHistory] = useState<string[]>([]);
+  const auth = useAuth();
+  const treeRef = useRef<GameTree>(new GameTree());
+  const [version, setVersion] = useState(0); // bump to re-render tree edits
+  const [currentId, setCurrentId] = useState(0);
   const [orientation, setOrientation] = useState<"white" | "black">("white");
-  const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
-  const [badges, setBadges] = useState<(Classification | null)[]>([]);
+  const [badges, setBadges] = useState<Map<number, Classification | null>>(new Map());
   const [sanInput, setSanInput] = useState("");
-  const pendingRef = useRef<PendingClassification | null>(null);
-  const engine = useEngineAnalysis();
+  const [loadInput, setLoadInput] = useState("");
+  const [studyId, setStudyId] = useState<string | null>(null);
+  const [studyName, setStudyName] = useState("");
+  const [studies, setStudies] = useState<{ id: string; name: string; variant: string }[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+  const pendingRef = useRef<PendingBadge | null>(null);
 
-  const gameOver = gameOverText(position);
+  const tree = treeRef.current;
+  const engine = useEngineAnalysis(tree.variant);
+  const currentNode = tree.node(currentId) ?? tree.root;
+  const fen = currentNode.fenAfter;
+  const position = useMemo(() => GamePosition.fromFen(fen, tree.variant), [fen, tree.variant]);
+
+  const bump = useCallback(() => setVersion((value) => value + 1), []);
+
   const { status: engineStatus, analyze, stop } = engine;
+  const gameOver = position.isCheckmate()
+    ? `Checkmate — ${position.turn === "w" ? "Black" : "White"} wins`
+    : position.isStalemate()
+      ? "Draw — stalemate"
+      : null;
 
   useEffect(() => {
     if (engineStatus !== "ready") return;
@@ -72,165 +81,200 @@ export function AnalysisBoard() {
     else analyze(fen);
   }, [engineStatus, fen, gameOver, analyze, stop]);
 
-  // Resolve a pending live classification: BOOK immediately (no analysis
-  // needed), otherwise once the new position's analysis is deep enough and a
-  // pre-move baseline existed.
+  // Live badge resolution (BOOK immediately; loss bands once depth ≥ 12).
   const resolvePending = useCallback(() => {
     const pending = pendingRef.current;
     if (!pending) return;
-    const book = openingForEpd(pending.epdAfter) !== null;
     let classification: Classification | null = null;
-    if (book) {
+    if (tree.variant === "standard" && openingForEpd(pending.epdAfter) !== null) {
       classification = "BOOK";
     } else {
-      const top = engine.lines[0];
       if (!pending.baseline) {
-        // No pre-move eval to compare against — no badge, honestly.
         pendingRef.current = null;
         return;
       }
-      if (engine.depth < 12 || !top) return; // wait for depth
+      const top = engine.lines[0];
+      if (engine.depth < 12 || !top) return;
       const mover = pending.moverColor;
-      const wpWhiteBefore = pending.baseline.wpWhiteBefore;
-      const wpWhiteAfter = top.wpWhite;
       classification = classifyMove({
-        variant: "standard",
-        wpBefore: mover === "w" ? wpWhiteBefore : 100 - wpWhiteBefore,
-        wpAfter: mover === "w" ? wpWhiteAfter : 100 - wpWhiteAfter,
+        variant: tree.variant,
+        wpBefore: mover === "w" ? pending.baseline.wpWhiteBefore : 100 - pending.baseline.wpWhiteBefore,
+        wpAfter: mover === "w" ? top.wpWhite : 100 - top.wpWhite,
         playedUci: pending.playedUci,
         bestUci: pending.baseline.bestUci,
         legalMoveCount: pending.legalMoveCount,
         isBook: false,
       });
     }
+    const done = pending;
     pendingRef.current = null;
-    setBadges((previous) => {
-      const next = [...previous];
-      next[pending.moveIndex] = classification;
-      return next;
-    });
-  }, [engine.depth, engine.lines]);
+    setBadges((previous) => new Map(previous).set(done.nodeId, classification));
+  }, [engine.depth, engine.lines, tree.variant]);
 
   useEffect(() => {
     resolvePending();
   }, [resolvePending]);
 
-  const refresh = useCallback(() => {
-    setFen(position.fen());
-    setHistory(position.historySan());
-    const last = position.lastMove();
-    setLastMove(last ? { from: last.from, to: last.to } : null);
-  }, [position]);
-
-  const afterMove = useCallback(
-    (moveUci: string) => {
+  const playMove = useCallback(
+    (input: { from: string; to: string } | { san: string }): boolean => {
+      const legalBefore = position.legalMoveCount();
       const top = engine.lines[0];
-      const moverColor = position.turn === "w" ? "b" : "w"; // already flipped by the move
-      const pending: PendingClassification = {
-        moveIndex: position.history().length - 1,
-        playedUci: moveUci,
-        moverColor,
-        legalMoveCount: 0,
-        epdAfter: position.epd(),
+      const node = tree.play(currentId, input);
+      if (!node) return false;
+      pendingRef.current = {
+        nodeId: node.id,
+        playedUci: node.uci,
+        moverColor: node.color,
+        legalMoveCount: legalBefore,
+        epdAfter: node.fenAfter.split(" ").slice(0, 4).join(" "),
         baseline: top?.firstUci ? { bestUci: top.firstUci, wpWhiteBefore: top.wpWhite } : null,
       };
-      // Recover the pre-move legal move count without disturbing state.
-      const played = position.lastMove();
-      if (played && position.undo()) {
-        pending.legalMoveCount = position.legalMoveCount();
-        position.moveUci(played.uci);
+      setCurrentId(node.id);
+      bump();
+      resolvePending();
+      return true;
+    },
+    [tree, currentId, position, engine.lines, bump, resolvePending]
+  );
+
+  // Keyboard navigation.
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)
+        return;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        const node = tree.node(currentId);
+        if (node && node.parentId !== null) setCurrentId(node.parentId);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        const node = tree.node(currentId) ?? tree.root;
+        if (node.children[0]) setCurrentId(node.children[0].id);
+      } else if (event.key === "Home") {
+        setCurrentId(0);
+      } else if (event.key === "End") {
+        const line = tree.mainline();
+        if (line.length) setCurrentId(line.at(-1)!.id);
       }
-      pendingRef.current = pending;
-      setBadges((previous) => {
-        const next = [...previous];
-        next[position.history().length - 1] = null;
-        return next;
-      });
-      refresh();
-      resolvePending(); // BOOK resolves without any engine output
-    },
-    [engine.lines, position, refresh, resolvePending]
-  );
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [tree, currentId]);
 
-  const tryMove = useCallback(
-    (from: string, to: string): boolean => {
-      const move = position.move({ from, to });
-      if (!move) return false;
-      afterMove(move.uci);
-      return true;
-    },
-    [position, afterMove]
-  );
-
-  const trySan = useCallback(
-    (san: string): boolean => {
-      const move = position.moveSan(san.trim());
-      if (!move) return false;
-      afterMove(move.uci);
-      return true;
-    },
-    [position, afterMove]
-  );
-
-  const newGame = useCallback(() => {
-    position.reset();
-    pendingRef.current = null;
-    setBadges([]);
-    setLastMove(null);
-    refresh();
-  }, [position, refresh]);
-
-  const undo = useCallback(() => {
-    if (position.undo()) {
+  const replaceTree = useCallback(
+    (next: GameTree, keepStudy?: { id: string; name: string }) => {
+      treeRef.current = next;
       pendingRef.current = null;
-      setBadges((previous) => previous.slice(0, position.history().length));
-      const previous = position.lastMove();
-      setLastMove(previous ? { from: previous.from, to: previous.to } : null);
-      refresh();
-    }
-  }, [position, refresh]);
-
-  const canSelect = useCallback(
-    (square: string) => {
-      const piece = position.pieceAt(square);
-      return Boolean(piece && piece.color === position.turn);
+      setBadges(new Map());
+      setCurrentId(next.mainline().at(-1)?.id ?? 0);
+      setStudyId(keepStudy?.id ?? null);
+      setStudyName(keepStudy?.name ?? "");
+      bump();
     },
-    [position, fen] // eslint-disable-line react-hooks/exhaustive-deps
+    [bump]
   );
+
+  // Load a reviewed game into the board (?game=…).
+  useEffect(() => {
+    if (!initialGameId || auth.status !== "ready") return;
+    fetch(`/api/games/${initialGameId}`)
+      .then(async (response) => {
+        const body = (await response.json()) as {
+          game?: { pgn: string; variant: string };
+          error?: { message: string };
+        };
+        if (!response.ok || !body.game) throw new Error(body.error?.message ?? "load failed");
+        const variant = (body.game.variant === "chess960" ? "chess960" : "standard") as VariantId;
+        replaceTree(GameTree.fromPgn(body.game.pgn, variant));
+        setNotice("Game loaded — Lichess annotations arrive as variations where present.");
+      })
+      .catch((error) =>
+        setNotice(error instanceof Error ? error.message : "Could not load the game.")
+      );
+  }, [initialGameId, auth.status, replaceTree]);
+
+  const loadStudies = useCallback(() => {
+    fetch("/api/studies")
+      .then(async (response) => (response.ok ? response.json() : { studies: [] }))
+      .then((body: { studies?: { id: string; name: string; variant: string }[] }) =>
+        setStudies(body.studies ?? [])
+      )
+      .catch(() => setStudies([]));
+  }, []);
+
+  useEffect(() => {
+    if (auth.status === "ready") loadStudies();
+  }, [auth.status, loadStudies]);
+
+  const saveStudy = useCallback(async () => {
+    const name = studyName.trim() || `Study ${new Date().toLocaleDateString()}`;
+    try {
+      const response = await fetch("/api/studies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: studyId ?? undefined,
+          name,
+          variant: tree.variant,
+          pgn: tree.toPgn({ Event: `GAMBIT study: ${name}` }),
+        }),
+      });
+      const body = (await response.json()) as { id?: string; error?: { message: string } };
+      if (!response.ok || !body.id) throw new Error(body.error?.message ?? "save failed");
+      setStudyId(body.id);
+      setStudyName(name);
+      setNotice(`Saved “${name}”.`);
+      loadStudies();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Save failed.");
+    }
+  }, [studyId, studyName, tree, loadStudies]);
+
+  const openStudy = useCallback(
+    async (id: string) => {
+      try {
+        const response = await fetch(`/api/games/${id}`);
+        const body = (await response.json()) as {
+          game?: { pgn: string; variant: string; whiteName?: string };
+          error?: { message: string };
+        };
+        if (!response.ok || !body.game) throw new Error(body.error?.message ?? "load failed");
+        const variant = (body.game.variant === "chess960" ? "chess960" : "standard") as VariantId;
+        replaceTree(GameTree.fromPgn(body.game.pgn, variant), {
+          id,
+          name: body.game.whiteName ?? "Study",
+        });
+        setNotice(null);
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Could not open the study.");
+      }
+    },
+    [replaceTree]
+  );
+
+  const loadFenOrPgn = useCallback(() => {
+    const text = loadInput.trim();
+    if (!text) return;
+    try {
+      if (text.includes("\n") || text.includes("1.") || text.startsWith("[")) {
+        replaceTree(GameTree.fromPgn(text));
+      } else if (isValidFen(text, "standard")) {
+        replaceTree(new GameTree(text, "standard"));
+      } else if (isValidFen(text, "chess960")) {
+        replaceTree(new GameTree(text, "chess960"));
+      } else {
+        throw new Error("Neither a valid FEN nor a parseable PGN.");
+      }
+      setLoadInput("");
+      setNotice(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not load that.");
+    }
+  }, [loadInput, replaceTree]);
 
   const topLine = engine.lines[0];
   const whiteBarPct = topLine ? topLine.wpWhite : 50;
-
-  const movePairs = useMemo(() => {
-    const pairs: {
-      number: number;
-      white: string;
-      black: string | null;
-      whiteBadge: Classification | null;
-      blackBadge: Classification | null;
-    }[] = [];
-    for (let i = 0; i < history.length; i += 2) {
-      pairs.push({
-        number: i / 2 + 1,
-        white: history[i] ?? "",
-        black: history[i + 1] ?? null,
-        whiteBadge: badges[i] ?? null,
-        blackBadge: badges[i + 1] ?? null,
-      });
-    }
-    return pairs;
-  }, [history, badges]);
-
-  const sanCell = (text: string, color: "w" | "b", badge: Classification | null) => (
-    <span className="inline-flex items-center gap-1">
-      {prefs.moveList === "figurine" ? (
-        <FigurineSan san={text} color={color} setId={prefs.pieceSet} />
-      ) : (
-        text
-      )}
-      {badge && <ClassificationIcon classification={badge} className="text-xs" />}
-    </span>
-  );
+  void version;
 
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
@@ -248,7 +292,7 @@ export function AnalysisBoard() {
                   transition: "height var(--motion-eval) ease-out",
                 }}
               />
-              <div className="w-full flex-1 bg-white-adv" style={{ transition: "height var(--motion-eval) ease-out" }} />
+              <div className="w-full flex-1 bg-white-adv" />
             </div>
           </div>
         )}
@@ -257,11 +301,18 @@ export function AnalysisBoard() {
             boardId="analysis"
             fen={fen}
             orientation={orientation}
-            lastMove={lastMove}
+            lastMove={
+              currentNode.id !== 0
+                ? { from: currentNode.uci.slice(0, 2), to: currentNode.uci.slice(2, 4) }
+                : null
+            }
             interactive
-            onMove={tryMove}
+            onMove={(from, to) => playMove({ from, to })}
             destsFrom={(square) => position.destsFrom(square)}
-            canSelect={canSelect}
+            canSelect={(square) => {
+              const piece = position.pieceAt(square);
+              return Boolean(piece && piece.color === position.turn);
+            }}
           />
           {gameOver && (
             <div className="mt-3 rounded-lg border border-edge-strong bg-raise px-4 py-2 text-center font-medium text-text">
@@ -271,26 +322,34 @@ export function AnalysisBoard() {
         </div>
       </div>
 
-      <div className="flex w-full flex-col gap-4 lg:w-80">
-        <div className="flex gap-2">
-          <button
-            onClick={newGame}
-            className="rounded-lg bg-paper px-3 py-1.5 text-sm font-medium text-field hover:bg-white-adv"
-          >
-            Reset
-          </button>
-          <button
-            onClick={undo}
-            className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong hover:text-text"
-          >
-            Undo
-          </button>
-          <button
-            onClick={() => setOrientation((o) => (o === "white" ? "black" : "white"))}
-            className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong hover:text-text"
-          >
+      <div className="flex w-full flex-col gap-4 lg:w-96">
+        <div className="flex flex-wrap gap-2">
+          <SmallButton onClick={() => replaceTree(new GameTree())}>Reset</SmallButton>
+          <SmallButton onClick={() => setOrientation((o) => (o === "white" ? "black" : "white"))}>
             Flip
-          </button>
+          </SmallButton>
+          {currentNode.id !== 0 && (
+            <>
+              <SmallButton
+                onClick={() => {
+                  tree.promote(currentNode.id);
+                  bump();
+                }}
+              >
+                Promote line
+              </SmallButton>
+              <SmallButton
+                onClick={() => {
+                  const parent = currentNode.parentId ?? 0;
+                  tree.deleteFrom(currentNode.id);
+                  setCurrentId(parent);
+                  bump();
+                }}
+              >
+                Delete from here
+              </SmallButton>
+            </>
+          )}
         </div>
 
         <div className="rounded-lg border border-edge p-3">
@@ -299,7 +358,7 @@ export function AnalysisBoard() {
               {engine.status === "booting" && "Engine booting…"}
               {engine.status === "error" && "Engine failed to load"}
               {engine.status === "ready" &&
-                `${engine.meta?.name ?? "Stockfish"} · ${engine.meta?.threads} thread${(engine.meta?.threads ?? 1) > 1 ? "s" : ""}`}
+                `${engine.meta?.name ?? "Stockfish"} · ${engine.meta?.threads} thread${(engine.meta?.threads ?? 1) > 1 ? "s" : ""}${tree.variant === "chess960" ? " · 960" : ""}`}
             </span>
             {engine.status === "ready" && engine.depth > 0 && (
               <span className="notation">
@@ -316,9 +375,13 @@ export function AnalysisBoard() {
                   <span className="notation w-20 shrink-0 font-medium text-lcd">
                     {formatEval(line.evaluation, prefs.evalBar.format, line.wpWhite)}
                   </span>
-                  <span className="truncate text-text-dim" title={line.pvSan.join(" ")}>
+                  <button
+                    className="truncate text-left text-text-dim hover:text-text"
+                    title={line.pvSan.join(" ")}
+                    onClick={() => line.firstUci && playMove({ san: line.pvSan[0] ?? "" })}
+                  >
                     {line.pvSan.slice(0, 8).join(" ")}
-                  </span>
+                  </button>
                 </li>
               ))}
               {engine.status === "ready" && engine.lines.length === 0 && (
@@ -328,35 +391,28 @@ export function AnalysisBoard() {
           )}
         </div>
 
-        <div className="max-h-72 overflow-y-auto rounded-lg border border-edge p-3">
-          {movePairs.length === 0 ? (
-            <p className="text-sm text-text-faint">
-              Make a move — drag a piece or tap origin then destination. Move badges appear as the
-              engine reaches depth 12.
+        <div data-testid="move-tree" className="max-h-80 overflow-y-auto rounded-lg border border-edge p-3 text-sm">
+          {tree.root.children.length === 0 ? (
+            <p className="text-text-faint">
+              Make a move — a second move from the same position starts a variation.
             </p>
           ) : (
-            <table className="w-full text-sm">
-              <tbody>
-                {movePairs.map((pair) => (
-                  <tr key={pair.number} className="text-text">
-                    <td className="notation w-8 py-0.5 pr-2 text-right text-text-faint">
-                      {pair.number}.
-                    </td>
-                    <td className="w-1/2 py-0.5">{sanCell(pair.white, "w", pair.whiteBadge)}</td>
-                    <td className="py-0.5">
-                      {pair.black ? sanCell(pair.black, "b", pair.blackBadge) : ""}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <VariationLine
+              nodes={tree.root.children}
+              currentId={currentId}
+              onSelect={setCurrentId}
+              badges={badges}
+              figurine={prefs.moveList === "figurine"}
+              pieceSet={prefs.pieceSet}
+              depth={0}
+            />
           )}
         </div>
 
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (trySan(sanInput)) setSanInput("");
+            if (playMove({ san: sanInput.trim() })) setSanInput("");
           }}
           className="flex gap-2"
         >
@@ -367,14 +423,189 @@ export function AnalysisBoard() {
             aria-label="Keyboard move entry"
             className="min-w-0 flex-1 rounded-lg border border-edge bg-transparent px-3 py-1.5 text-sm placeholder:text-text-faint"
           />
-          <button
-            type="submit"
-            className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong"
-          >
+          <button className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong">
             Play
           </button>
         </form>
+
+        <details className="rounded-lg border border-edge px-3 py-2">
+          <summary className="cursor-pointer select-none text-sm text-text-dim hover:text-text">
+            Load position / PGN · studies
+          </summary>
+          <div className="mt-2">
+            <textarea
+              value={loadInput}
+              onChange={(event) => setLoadInput(event.target.value)}
+              placeholder="Paste a FEN or a PGN (variations supported)…"
+              rows={3}
+              className="w-full rounded border border-edge bg-transparent px-2 py-1.5 text-xs text-text placeholder:text-text-faint"
+            />
+            <div className="mt-1.5 flex gap-2">
+              <SmallButton onClick={loadFenOrPgn}>Load</SmallButton>
+            </div>
+            {auth.status === "ready" && (
+              <div className="mt-3 border-t border-edge pt-2">
+                <div className="flex gap-2">
+                  <input
+                    value={studyName}
+                    onChange={(event) => setStudyName(event.target.value)}
+                    placeholder="study name…"
+                    className="min-w-0 flex-1 rounded border border-edge bg-transparent px-2 py-1 text-xs text-text placeholder:text-text-faint"
+                    aria-label="Study name"
+                  />
+                  <SmallButton onClick={() => void saveStudy()}>
+                    {studyId ? "Save" : "Save as study"}
+                  </SmallButton>
+                </div>
+                {studies.length > 0 && (
+                  <ul className="mt-2 max-h-28 overflow-y-auto">
+                    {studies.map((study) => (
+                      <li key={study.id} className="flex items-center justify-between py-0.5">
+                        <button
+                          onClick={() => void openStudy(study.id)}
+                          className="truncate text-xs text-text-dim hover:text-text"
+                        >
+                          {study.name}
+                          {study.variant === "chess960" && (
+                            <span className="notation ml-1 text-text-faint">960</span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            void fetch("/api/studies", {
+                              method: "DELETE",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ id: study.id }),
+                            }).then(() => loadStudies());
+                          }}
+                          className="text-xs text-text-faint hover:text-warn-2"
+                          aria-label={`Delete study ${study.name}`}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        </details>
+        {notice && <p className="text-xs text-text-faint">{notice}</p>}
       </div>
     </div>
+  );
+}
+
+function SmallButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-lg border border-edge px-3 py-1.5 text-sm text-text-dim hover:border-edge-strong hover:text-text"
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Recursive variation renderer: mainline flows inline; variations indent. */
+function VariationLine({
+  nodes,
+  currentId,
+  onSelect,
+  badges,
+  figurine,
+  pieceSet,
+  depth,
+}: {
+  nodes: TreeNode[];
+  currentId: number;
+  onSelect: (id: number) => void;
+  badges: Map<number, Classification | null>;
+  figurine: boolean;
+  pieceSet: "classic" | "cburnett";
+  depth: number;
+}) {
+  const elements: React.ReactNode[] = [];
+  let chain: TreeNode[] | undefined = nodes;
+  while (chain && chain.length > 0) {
+    const main: TreeNode = chain[0]!;
+    elements.push(
+      <MoveButton
+        key={main.id}
+        node={main}
+        active={main.id === currentId}
+        onSelect={onSelect}
+        badge={badges.get(main.id) ?? null}
+        figurine={figurine}
+        pieceSet={pieceSet}
+        showNumber={main.color === "w" || elements.length === 0}
+      />
+    );
+    if (main.comment) {
+      elements.push(
+        <span key={`c${main.id}`} className="text-xs italic text-text-faint">
+          {main.comment}{" "}
+        </span>
+      );
+    }
+    for (const variation of chain.slice(1)) {
+      elements.push(
+        <span
+          key={`v${variation.id}`}
+          className={`my-0.5 block border-l border-edge pl-3 ${depth > 2 ? "" : ""}`}
+        >
+          <VariationLine
+            nodes={[variation]}
+            currentId={currentId}
+            onSelect={onSelect}
+            badges={badges}
+            figurine={figurine}
+            pieceSet={pieceSet}
+            depth={depth + 1}
+          />
+        </span>
+      );
+    }
+    chain = main.children;
+  }
+  return <span className={depth === 0 ? "leading-7" : "leading-6"}>{elements}</span>;
+}
+
+function MoveButton({
+  node,
+  active,
+  onSelect,
+  badge,
+  figurine,
+  pieceSet,
+  showNumber,
+}: {
+  node: TreeNode;
+  active: boolean;
+  onSelect: (id: number) => void;
+  badge: Classification | null;
+  figurine: boolean;
+  pieceSet: "classic" | "cburnett";
+  showNumber: boolean;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(node.id)}
+      className={`mr-1 inline-flex items-center gap-0.5 rounded px-1 py-0.5 align-baseline ${
+        active ? "bg-raise text-text" : "text-text-dim hover:bg-raise hover:text-text"
+      }`}
+    >
+      {showNumber && (
+        <span className="notation text-xs text-text-faint">
+          {node.moveNumber}
+          {node.color === "w" ? "." : "…"}
+        </span>
+      )}
+      <span className="notation">
+        {figurine ? <FigurineSan san={node.san} color={node.color} setId={pieceSet} /> : node.san}
+      </span>
+      {badge && <ClassificationIcon classification={badge} className="text-xs" />}
+    </button>
   );
 }

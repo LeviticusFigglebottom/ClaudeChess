@@ -35,6 +35,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <Link href="/games" className="text-sm text-text-dim hover:text-text">
                   Games
                 </Link>
+                <Link href="/analysis" className="text-sm text-text-dim hover:text-text">
+                  Analysis
+                </Link>
                 <span className="cursor-default text-sm text-text-faint" title="Phase 3">
                   Puzzles
                 </span>

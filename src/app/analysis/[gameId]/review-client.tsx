@@ -214,7 +214,7 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   );
 
   return (
-    <Shell>
+    <Shell gameId={gameId}>
       <div ref={liveRef} className="sr-only" role="status" aria-live="polite" />
       <header className="mb-4 flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <span className="text-sm text-text">
@@ -349,14 +349,24 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, gameId }: { children: React.ReactNode; gameId?: string }) {
   return (
     <div>
       <div className="mb-3 flex items-baseline justify-between">
         <h1 className="text-xl font-semibold text-paper">Review</h1>
-        <Link href="/games" className="text-sm text-text-dim hover:text-text">
-          ← games
-        </Link>
+        <span className="flex gap-4">
+          {gameId && (
+            <Link
+              href={`/analysis?game=${gameId}`}
+              className="text-sm text-text-dim hover:text-text"
+            >
+              open in analysis board
+            </Link>
+          )}
+          <Link href="/games" className="text-sm text-text-dim hover:text-text">
+            ← games
+          </Link>
+        </span>
       </div>
       {children}
     </div>
