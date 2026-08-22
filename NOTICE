@@ -30,9 +30,15 @@ Lichess chess-openings dataset
   Files:    /data/chess-openings/*.tsv (vendored),
             /src/db/seed/openings.json (compiled form)
 
-Planned (addendum A1.3, Phase 4.5): Fairy-Stockfish WASM (GPL-3.0) for
-variants vanilla Stockfish cannot evaluate. It is not yet distributed; this
-notice will be extended when it lands.
+Fairy-Stockfish 14 (fairy-stockfish-nnue.wasm 1.1.11)
+  License:  GNU General Public License v3.0
+  Source:   https://github.com/fairy-stockfish/fairy-stockfish.wasm
+            (engine: https://github.com/fairy-stockfish/Fairy-Stockfish)
+  Files:    /public/engine/fairy/stockfish.js, stockfish.wasm,
+            stockfish.worker.js (vendored unmodified from the npm package;
+            fairy-worker.js and fairy-uci.cjs are GAMBIT shims)
+  Usage:    evaluation for variants vanilla Stockfish cannot score
+            (three-check, King of the Hill) — addendum A1.3, Phase 4.5.
 
 Other dependencies (Next.js, React, react-chessboard, Drizzle, Supabase
 clients, Tailwind) are under MIT/Apache-style licenses; see their package

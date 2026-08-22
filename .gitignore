@@ -24,3 +24,7 @@ data/puzzles-raw/
 data/gate-burn.log
 data/review-screenshot.png
 .env.local
+data/dev-server.log
+data/gate2-*.log
+data/gate2-report.txt
+data/mock-explorer.log

@@ -23,6 +23,16 @@ const COMPONENTS = [
     ],
   },
   {
+    name: "Fairy-Stockfish 14 (fairy-stockfish-nnue.wasm 1.1.11)",
+    license: "GNU General Public License v3.0",
+    licenseUrl: "https://www.gnu.org/licenses/gpl-3.0.html",
+    role: "Variant engine — evaluation for three-check and King of the Hill, which vanilla Stockfish cannot score. Served from /engine/fairy as unmodified binaries from the npm package.",
+    sources: [
+      { label: "Fairy-Stockfish source", url: "https://github.com/fairy-stockfish/Fairy-Stockfish" },
+      { label: "WASM port (ianfab)", url: "https://github.com/fairy-stockfish/fairy-stockfish.wasm" },
+    ],
+  },
+  {
     name: "chessops 0.15.1",
     license: "GNU General Public License v3.0 or later",
     licenseUrl: "https://www.gnu.org/licenses/gpl-3.0.html",

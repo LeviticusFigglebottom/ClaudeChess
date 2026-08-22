@@ -1,6 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import path from "node:path";
-import { ENGINE_SUPPORTED_VARIANTS, type VariantId } from "@/lib/chess/variant";
+import {
+  ENGINE_SUPPORTED_VARIANTS,
+  FAIRY_ENGINE_VARIANTS,
+  type VariantId,
+} from "@/lib/chess/variant";
+import { FAIRY_NODE_CLI, FAIRY_UCI_VARIANT } from "./fairy";
 import type { EngineInfo } from "./types";
 import { parseBestmoveLine, parseInfoLine } from "./uci";
 
@@ -42,15 +47,13 @@ export class ServerEngine {
   async init(opts: Omit<ServerEngineOpts, "variant"> = {}): Promise<void> {
     if (!ENGINE_SUPPORTED_VARIANTS.includes(this.variant)) {
       throw new Error(
-        `engine cannot evaluate variant "${this.variant}" — Fairy-Stockfish lands in Phase 4.5`
+        `engine cannot evaluate variant "${this.variant}" — refusing meaningless evals (A1.3)`
       );
     }
-    const enginePath = path.resolve(
-      process.cwd(),
-      "public",
-      "engine",
-      "stockfish-18-lite-single.js"
-    );
+    const fairy = FAIRY_ENGINE_VARIANTS.includes(this.variant);
+    const enginePath = fairy
+      ? path.resolve(process.cwd(), ...FAIRY_NODE_CLI)
+      : path.resolve(process.cwd(), "public", "engine", "stockfish-18-lite-single.js");
     this.child = spawn(process.execPath, [enginePath], { stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => {
@@ -67,6 +70,11 @@ export class ServerEngine {
     this.send("uci");
     await ready;
     if (this.variant === "chess960") this.send("setoption name UCI_Chess960 value true");
+    if (fairy) {
+      this.send(
+        `setoption name UCI_Variant value ${FAIRY_UCI_VARIANT[this.variant] ?? this.variant}`
+      );
+    }
     this.send(`setoption name Hash value ${opts.hashMb ?? 128}`);
     const readyOk = this.waitFor((line) => line === "readyok");
     this.send("isready");

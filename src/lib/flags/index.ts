@@ -9,6 +9,7 @@
  */
 
 export const FEATURE_FLAGS = [
+  "FF_VARIANTS",
   "FF_CALIBRATION",
   "FF_FINGERPRINT",
   "FF_TEMPO",
@@ -24,6 +25,7 @@ function on(value: string | undefined): boolean {
 }
 
 const flagValues: Record<FeatureFlag, boolean> = {
+  FF_VARIANTS: on(process.env.NEXT_PUBLIC_FF_VARIANTS),
   FF_CALIBRATION: on(process.env.NEXT_PUBLIC_FF_CALIBRATION),
   FF_FINGERPRINT: on(process.env.NEXT_PUBLIC_FF_FINGERPRINT),
   FF_TEMPO: on(process.env.NEXT_PUBLIC_FF_TEMPO),

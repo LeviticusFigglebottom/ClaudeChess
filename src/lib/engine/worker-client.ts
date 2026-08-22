@@ -1,4 +1,5 @@
-import { ENGINE_SUPPORTED_VARIANTS } from "@/lib/chess/variant";
+import { ENGINE_SUPPORTED_VARIANTS, FAIRY_ENGINE_VARIANTS } from "@/lib/chess/variant";
+import { FAIRY_UCI_VARIANT, FAIRY_WORKER_URL } from "./fairy";
 import type {
   AnalyzeOpts,
   EngineBuild,
@@ -80,11 +81,19 @@ export class StockfishClient implements EngineClient {
     if (this.worker) throw new Error("engine already initialized");
     if (!ENGINE_SUPPORTED_VARIANTS.includes(opts.variant)) {
       throw new Error(
-        `variant "${opts.variant}" requires Fairy-Stockfish (Phase 4.5, addendum A1.3) — ` +
-          "refusing to return meaningless evals from vanilla Stockfish"
+        `variant "${opts.variant}" has no engine — ` +
+          "refusing to return meaningless evals (A1.3)"
       );
     }
-    const worker = new Worker(this.build.url);
+    const fairy = FAIRY_ENGINE_VARIANTS.includes(opts.variant);
+    if (fairy && (typeof SharedArrayBuffer === "undefined" || !crossOriginIsolated)) {
+      // The vendored Fairy build is pthread-only; without isolation it
+      // cannot start, and a broken half-init is worse than a clear refusal.
+      throw new Error(
+        "variant analysis needs cross-origin isolation (check /engine-check) — Fairy-Stockfish is a threaded build"
+      );
+    }
+    const worker = new Worker(fairy ? FAIRY_WORKER_URL : this.build.url);
     this.worker = worker;
 
     const failed = new Promise<never>((_, reject) => {
@@ -97,13 +106,16 @@ export class StockfishClient implements EngineClient {
     this.send("uci");
     await Promise.race([this.waitForLine((l) => l === "uciok"), failed]);
 
-    const threads = Math.max(1, Math.min(opts.threads, this.build.maxThreads));
+    const threads = Math.max(1, Math.min(opts.threads, fairy ? 4 : this.build.maxThreads));
     this.send(`setoption name Threads value ${threads}`);
     this.send(`setoption name Hash value ${opts.hashMb}`);
     this.send(`setoption name MultiPV value ${this.lastMultipv}`);
     if (opts.variant === "chess960") {
       // Engine then reads X-FEN castling and speaks king-takes-rook UCI.
       this.send("setoption name UCI_Chess960 value true");
+    }
+    if (fairy) {
+      this.send(`setoption name UCI_Variant value ${FAIRY_UCI_VARIANT[opts.variant] ?? opts.variant}`);
     }
     this.send("isready");
     await Promise.race([this.waitForLine((l) => l === "readyok"), failed]);

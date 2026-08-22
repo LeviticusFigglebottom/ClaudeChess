@@ -14,11 +14,33 @@ export function isVariantId(value: string): value is VariantId {
 }
 
 /**
- * Variants vanilla Stockfish can evaluate. Everything else needs
- * Fairy-Stockfish (Phase 4.5) — a vanilla eval of e.g. a KotH position is
- * meaningless and silently corrupts every downstream trainer (A1.3).
+ * Variants vanilla Stockfish can evaluate — it is stronger for these and
+ * its NNUE is tuned for exactly them, so they never route to Fairy (A1.3).
  */
-export const ENGINE_SUPPORTED_VARIANTS: readonly VariantId[] = ["standard", "chess960"];
+export const VANILLA_ENGINE_VARIANTS: readonly VariantId[] = ["standard", "chess960"];
+
+/**
+ * Variants served by the vendored Fairy-Stockfish build (Phase 4.5,
+ * FF_VARIANTS). Crazyhouse stays out until a drop UI exists (B1.1).
+ */
+export const FAIRY_ENGINE_VARIANTS: readonly VariantId[] = ["threecheck", "koth"];
+
+/**
+ * Everything an engine can evaluate. Anything else must be REFUSED —
+ * a meaningless eval silently corrupts every downstream trainer (A1.3).
+ */
+export const ENGINE_SUPPORTED_VARIANTS: readonly VariantId[] = [
+  ...VANILLA_ENGINE_VARIANTS,
+  ...FAIRY_ENGINE_VARIANTS,
+];
+
+/** Variants playable against humans (rules exist and the board can render them). */
+export const PLAYABLE_VARIANTS: readonly VariantId[] = [
+  "standard",
+  "chess960",
+  "threecheck",
+  "koth",
+];
 
 /** chessops rules key for each variant. chess960 is rules-identical to chess. */
 export function rulesForVariant(variant: VariantId): Rules {
