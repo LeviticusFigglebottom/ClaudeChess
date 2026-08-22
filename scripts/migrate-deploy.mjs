@@ -35,4 +35,8 @@ run("drizzle-kit migrate (journal order)", "npx", ["drizzle-kit", "migrate"]);
 run("openings seed (idempotent upsert)", "node", ["scripts/seed-openings.mjs"]);
 run("explorer aggregate seed (idempotent upsert)", "node", ["scripts/seed-explorer-agg.mjs"]);
 run("global eval-cache seed (idempotent upsert)", "node", ["scripts/seed-eval-cache.mjs"]);
+// Count-guarded: a fully-seeded table skips in one query. Added after the
+// hosted DB was found EMPTY (0 rows) — this seed had never been wired in,
+// so production's rated-puzzle page had been serving no_puzzles 503s.
+run("puzzle set seed (count-guarded upsert)", "node", ["scripts/seed-puzzles.mjs"]);
 console.log("migrate-deploy: done");

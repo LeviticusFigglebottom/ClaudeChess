@@ -18,6 +18,18 @@ const rows = gunzipSync(readFileSync(file))
   .map((line) => JSON.parse(line));
 
 const sql = postgres(DATABASE_URL, { prepare: false });
+
+// Cheap idempotence guard for the migrate-deploy path: the dataset is
+// insert-only from our side (attempt counters live elsewhere), so a table
+// already holding the full set needs nothing. Rerun manually after
+// changing the committed subset (row-count change makes it automatic).
+const [{ n: existing }] = await sql`select count(*)::int as n from puzzles`;
+if (existing >= rows.length) {
+  console.log(`puzzles: table already holds ${existing} >= ${rows.length} — skipping`);
+  await sql.end();
+  process.exit(0);
+}
+
 let upserted = 0;
 for (let i = 0; i < rows.length; i += 500) {
   const batch = rows.slice(i, i + 500);
