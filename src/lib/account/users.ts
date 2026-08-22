@@ -41,11 +41,16 @@ export async function getUserByHandle(db: Db, handle: string): Promise<UserRow |
  */
 export async function ensureUser(
   db: Db,
-  auth: AuthShape,
+  rawAuth: AuthShape,
   opts: { desiredHandle?: string; now?: Date; random?: () => number } = {}
 ): Promise<EnsureUserResult> {
   const now = opts.now ?? new Date();
   const random = opts.random ?? Math.random;
+  // GoTrue hands anonymous users an empty-string email; users.email is
+  // UNIQUE and '' is a value ('' == '' collides where NULLs coexist), so
+  // normalize here too — the domain layer must not depend on every adapter
+  // remembering (deployed finding: 23505 users_email_unique, Key (email)=()).
+  const auth: AuthShape = { ...rawAuth, email: rawAuth.email || null };
 
   const existing = await getUser(db, auth.id);
   if (existing) {
