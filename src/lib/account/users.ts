@@ -135,9 +135,18 @@ export async function ensureUser(
   // handle-collision streak — surface the underlying error so a deployed
   // misconfiguration (wrong constraint, wrong database, RLS surprise) is
   // diagnosable from the response and the function log.
-  const detail =
-    lastViolation instanceof Error
-      ? `${lastViolation.message}${lastViolation.cause instanceof Error ? ` <- ${lastViolation.cause.message}` : ""}`
+  let deepest: Record<string, unknown> | null = null;
+  {
+    let current: unknown = lastViolation;
+    for (let depth = 0; depth < 5 && typeof current === "object" && current !== null; depth++) {
+      if ((current as { code?: unknown }).code) deepest = current as Record<string, unknown>;
+      current = (current as { cause?: unknown }).cause;
+    }
+  }
+  const detail = deepest
+    ? `code=${deepest.code} constraint=${deepest.constraint_name ?? "?"} detail=${deepest.detail ?? "?"} msg=${String(deepest.message ?? "").slice(0, 200)}`
+    : lastViolation instanceof Error
+      ? lastViolation.message.slice(0, 300)
       : String(lastViolation);
   console.error("[ensureUser] handle allocation exhausted:", lastViolation);
   throw new AccountError(
