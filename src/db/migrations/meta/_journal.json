@@ -64,6 +64,13 @@
       "when": 1787359382738,
       "tag": "0008_flat_alex_power",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787362310282,
+      "tag": "0009_wooden_quicksilver",
+      "breakpoints": true
     }
   ]
 }

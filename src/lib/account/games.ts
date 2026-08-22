@@ -172,7 +172,10 @@ export async function getRatingStates(
   userId: string,
   now: Date = new Date()
 ): Promise<RatingStateView[]> {
-  const rows = await db.select().from(ratings).where(eq(ratings.userId, userId));
+  const allRows = await db.select().from(ratings).where(eq(ratings.userId, userId));
+  // Puzzle rating is its own pool with per-attempt updates (Phase 3) — it
+  // never flows through the game-rating period sync.
+  const rows = allRows.filter((row) => row.timeControl !== "puzzle");
   const out: RatingStateView[] = [];
   for (const row of rows) {
     const state = rowToState(row);
@@ -197,7 +200,7 @@ export async function getRatingStates(
     }
     out.push({
       variant: row.variant,
-      bucket: row.timeControl,
+      bucket: row.timeControl as TimeControlBucket,
       state: settled,
       updatedAt: (settled !== state ? now : row.updatedAt).toISOString(),
     });

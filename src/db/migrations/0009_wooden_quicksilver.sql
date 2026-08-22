@@ -1,0 +1,1 @@
+ALTER TYPE "public"."time_control_bucket" ADD VALUE 'puzzle';

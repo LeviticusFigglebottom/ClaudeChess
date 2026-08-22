@@ -8,6 +8,7 @@ import { openingForEpd } from "@/lib/chess/openings";
 import type { VariantId } from "@/lib/chess/variant";
 import { classifyMove, type Classification, type WhitePovEval } from "@/lib/eval";
 import { ClassificationIcon } from "./classification-icon";
+import { ExplorerPanel } from "./explorer-panel";
 import { FigurineSan } from "./pieces";
 import { GameBoard } from "./game-board";
 import { usePrefs } from "./prefs-context";
@@ -408,6 +409,12 @@ export function AnalysisBoard({ initialGameId }: { initialGameId?: string }) {
             />
           )}
         </div>
+
+        <ExplorerPanel
+          fen={fen}
+          variant={tree.variant}
+          onPlayMove={(san) => playMove({ san })}
+        />
 
         <form
           onSubmit={(event) => {

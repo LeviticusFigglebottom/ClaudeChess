@@ -76,12 +76,18 @@ export const challengeStatusEnum = pgEnum("challenge_status", [
   "canceled",
 ]);
 
+/**
+ * Rating buckets: the five §7 time controls plus 'puzzle' (Phase 3's rated
+ * puzzle mode keeps its own Glicko pool — never blended with game ratings,
+ * and labeled as its own pool in any UI per the standing requirement).
+ */
 export const timeControlBucketEnum = pgEnum("time_control_bucket", [
   "bullet",
   "blitz",
   "rapid",
   "classical",
   "daily",
+  "puzzle",
 ]);
 
 export const classificationEnum = pgEnum("classification", [
