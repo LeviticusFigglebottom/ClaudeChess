@@ -70,15 +70,22 @@ export const DEFAULT_PREFS: Prefs = {
   labs: {},
 };
 
-/** Board themes are token pairs, not textures — no asset, no license burden. */
-export const BOARD_THEMES: Record<BoardThemeId, { name: string; light: string; dark: string }> = {
-  tournament: { name: "Tournament (LCD)", light: "#e6e7e1", dark: "#9eaf96" },
-  emerald: { name: "Emerald", light: "#ebecd0", dark: "#779556" },
-  walnut: { name: "Walnut", light: "#ead8b7", dark: "#9a6b44" },
-  slate: { name: "Slate", light: "#cbd5e0", dark: "#4a5568" },
-  ice: { name: "Ice", light: "#dee3e6", dark: "#8ca2ad" },
-  amethyst: { name: "Amethyst", light: "#e6dbf1", dark: "#8e6bab" },
-  "high-contrast": { name: "High contrast", light: "#ffffff", dark: "#1c1c1c" },
+/**
+ * Board themes are token pairs, not textures — no asset, no license burden.
+ * `highlight` is the last-move tint, chosen PER THEME for contrast against
+ * both square colors (a single global tint disappears on same-hue boards).
+ */
+export const BOARD_THEMES: Record<
+  BoardThemeId,
+  { name: string; light: string; dark: string; highlight: string }
+> = {
+  tournament: { name: "Tournament (LCD)", light: "#e6e7e1", dark: "#9eaf96", highlight: "#e6c34a" },
+  emerald: { name: "Emerald", light: "#ebecd0", dark: "#779556", highlight: "#f5f26b" },
+  walnut: { name: "Walnut", light: "#ead8b7", dark: "#9a6b44", highlight: "#ffd24d" },
+  slate: { name: "Slate", light: "#cbd5e0", dark: "#4a5568", highlight: "#f0b84f" },
+  ice: { name: "Ice", light: "#dee3e6", dark: "#8ca2ad", highlight: "#f2c94c" },
+  amethyst: { name: "Amethyst", light: "#e6dbf1", dark: "#8e6bab", highlight: "#ffd166" },
+  "high-contrast": { name: "High contrast", light: "#ffffff", dark: "#1c1c1c", highlight: "#ffee00" },
 };
 
 const STORAGE_KEY = "gambit.prefs.v1";
@@ -125,13 +132,13 @@ export function savePrefs(prefs: Prefs): void {
 }
 
 /** Effective board colors (accessibility high-contrast wins over theme). */
-export function boardColors(prefs: Prefs): { light: string; dark: string } {
+export function boardColors(prefs: Prefs): { light: string; dark: string; highlight: string } {
   const theme = prefs.accessibility.highContrastBoard
     ? BOARD_THEMES["high-contrast"]
     : // Stored prefs can name a theme id from another app version — fall
       // back rather than crash the board.
       (BOARD_THEMES[prefs.boardTheme] ?? BOARD_THEMES.tournament);
-  return { light: theme.light, dark: theme.dark };
+  return { light: theme.light, dark: theme.dark, highlight: theme.highlight };
 }
 
 /** Board move-animation duration in ms, mirroring the CSS motion tokens. */

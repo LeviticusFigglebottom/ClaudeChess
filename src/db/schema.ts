@@ -378,6 +378,16 @@ export const plies = pgTable(
     pv1: jsonb("pv1").$type<string[]>(),
     pv2: jsonb("pv2").$type<string[]>(),
     pv3: jsonb("pv3").$type<string[]>(),
+    /**
+     * White-POV evals of the alternative lines (pv2/pv3) from the
+     * before-position search — what the review "alternatives" explanation
+     * renders. pv1's eval is evalBeforeCp/mateBefore. Null on rows analyzed
+     * before these columns existed.
+     */
+    pv2EvalCp: integer("pv2_eval_cp"),
+    pv2Mate: integer("pv2_mate"),
+    pv3EvalCp: integer("pv3_eval_cp"),
+    pv3Mate: integer("pv3_mate"),
 
     /** Mover-POV win probabilities (0..100) and loss. */
     wpBefore: real("wp_before"),

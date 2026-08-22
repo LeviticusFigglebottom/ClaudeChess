@@ -432,6 +432,11 @@ export async function writePlyRecord(
       pv1: beforePv1?.pv ?? [],
       pv2: beforePv2?.pv ?? null,
       pv3: before.infos[2]?.pv ?? null,
+      // White-POV alternative-line evals (review "alternatives" rendering).
+      pv2EvalCp: beforePv2 ? normalizeInfo(beforePv2, mover).cp : null,
+      pv2Mate: beforePv2 ? normalizeInfo(beforePv2, mover).mateIn : null,
+      pv3EvalCp: before.infos[2] ? normalizeInfo(before.infos[2], mover).cp : null,
+      pv3Mate: before.infos[2] ? normalizeInfo(before.infos[2], mover).mateIn : null,
       wpBefore,
       wpAfter,
       wpLoss: loss,

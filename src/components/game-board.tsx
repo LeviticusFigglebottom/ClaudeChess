@@ -61,11 +61,20 @@ export function GameBoard({
     [interactive, selected, legalTargets, tryMove, canSelect]
   );
 
+  const colors = boardColors(prefs);
+
   const squareStyles = useMemo(() => {
     const styles: Record<string, React.CSSProperties> = {};
     if (lastMove) {
-      styles[lastMove.from] = { backgroundColor: "color-mix(in oklab, var(--lcd) 45%, transparent)" };
-      styles[lastMove.to] = { backgroundColor: "color-mix(in oklab, var(--lcd) 60%, transparent)" };
+      // Last-move tint is per-theme (BOARD_THEMES.highlight) so it stays
+      // OBVIOUS on every board — a fixed sage tint vanished on green boards.
+      styles[lastMove.from] = {
+        backgroundColor: `color-mix(in oklab, ${colors.highlight} 55%, transparent)`,
+      };
+      styles[lastMove.to] = {
+        backgroundColor: `color-mix(in oklab, ${colors.highlight} 78%, transparent)`,
+        boxShadow: `inset 0 0 0 2px color-mix(in oklab, ${colors.highlight} 90%, black)`,
+      };
     }
     if (selected) {
       styles[selected] = { backgroundColor: "color-mix(in oklab, var(--paper) 45%, transparent)" };
@@ -77,9 +86,7 @@ export function GameBoard({
       };
     }
     return styles;
-  }, [lastMove, selected, legalTargets]);
-
-  const colors = boardColors(prefs);
+  }, [lastMove, selected, legalTargets, colors.highlight]);
 
   return (
     <Chessboard

@@ -16,6 +16,7 @@ import {
   type BatchProgress,
 } from "@/lib/analysis/client-batch";
 import { isProvisional } from "@/lib/analysis/verify-rules";
+import { evalLabel, explainPly } from "@/lib/eval/explain";
 import { GamePosition } from "@/lib/chess/position";
 import type { VariantId } from "@/lib/chess/variant";
 import { START_FEN } from "@/lib/chess/fen";
@@ -51,6 +52,12 @@ interface PlyPayload {
   mateAfter: number | null;
   bestMoveUci: string | null;
   pv1: string[] | null;
+  pv2: string[] | null;
+  pv3: string[] | null;
+  pv2EvalCp: number | null;
+  pv2Mate: number | null;
+  pv3EvalCp: number | null;
+  pv3Mate: number | null;
   wpBefore: number | null;
   wpAfter: number | null;
   wpLoss: number | null;
@@ -461,7 +468,11 @@ export function ReviewClient({ gameId }: { gameId: string }) {
           />
           {current && (
             <PostmortemGate gameId={gameId} ply={current}>
-              <PlyDetail ply={current} variant={game.variant as VariantId} />
+              <PlyDetail
+                ply={current}
+                nextPly={data.plies[cursor] ?? null}
+                variant={game.variant as VariantId}
+              />
             </PostmortemGate>
           )}
         </div>
@@ -723,30 +734,86 @@ function PostmortemGate({
   );
 }
 
-function PlyDetail({ ply, variant }: { ply: PlyPayload; variant: VariantId }) {
-  const refutationSan = useMemo(() => {
-    if (!ply.tags.length || !ply.pv1) return null;
-    try {
-      // The refutation line is the NEXT position's pv; here we show the best
-      // line from before the move for context.
-      const replay = GamePosition.fromFen(ply.fenBefore, variant);
-      const sans: string[] = [];
-      for (const uci of (ply.pv1 ?? []).slice(0, 6)) {
-        const move = replay.moveUci(uci);
-        if (!move) break;
-        sans.push(move.san);
-      }
-      return sans.join(" ");
-    } catch {
-      return null;
+const ERROR_CLASSES: Classification[] = ["INACCURACY", "MISTAKE", "BLUNDER", "MISS"];
+
+/** UCI line → SAN list from a starting fen (stops at the first illegal move). */
+function sanLine(fen: string, line: string[] | null, variant: VariantId, max = 6): string[] {
+  if (!line || line.length === 0) return [];
+  try {
+    const replay = GamePosition.fromFen(fen, variant);
+    const sans: string[] = [];
+    for (const uci of line.slice(0, max)) {
+      const move = replay.moveUci(uci);
+      if (!move) break;
+      sans.push(move.san);
     }
+    return sans;
+  } catch {
+    return [];
+  }
+}
+
+function PlyDetail({
+  ply,
+  nextPly,
+  variant,
+}: {
+  ply: PlyPayload;
+  nextPly: PlyPayload | null;
+  variant: VariantId;
+}) {
+  const bestLine = useMemo(
+    () => sanLine(ply.fenBefore, ply.pv1, variant),
+    [ply, variant]
+  );
+  // The actual refutation: the best line FROM the position the move created
+  // (the next ply's stored pv1 — one search per position, spec §4).
+  const punishment = useMemo(
+    () => sanLine(ply.fenAfter, nextPly?.pv1 ?? null, variant),
+    [ply, nextPly, variant]
+  );
+  const alternatives = useMemo(() => {
+    const options: { san: string; label: string | null }[] = [];
+    const seen = new Set<string>();
+    const entries: [string[] | null, number | null, number | null][] = [
+      [ply.pv1, ply.evalBeforeCp, ply.mateBefore],
+      [ply.pv2, ply.pv2EvalCp, ply.pv2Mate],
+      [ply.pv3, ply.pv3EvalCp, ply.pv3Mate],
+    ];
+    for (const [line, cp, mate] of entries) {
+      const san = sanLine(ply.fenBefore, line, variant, 1)[0];
+      if (!san || seen.has(san)) continue;
+      seen.add(san);
+      options.push({ san, label: evalLabel(cp, mate) });
+    }
+    return options;
   }, [ply, variant]);
 
+  const playedIsBest = ply.bestMoveUci !== null && ply.uci === ply.bestMoveUci;
+  const { verdict, notes } = useMemo(
+    () =>
+      explainPly({
+        san: ply.san,
+        classification: ply.classification,
+        wpLoss: ply.wpLoss,
+        playedIsBest,
+        bestSan: bestLine[0] ?? null,
+        mateAfterWhitePov: ply.mateAfter,
+        moverIsWhite: ply.color === "white",
+        motifs: ply.tags.map((tag) => ({ motif: tag.motif, evidence: tag.evidence })),
+        provisional: isProvisional(ply),
+        degraded: ply.degraded,
+      }),
+    [ply, playedIsBest, bestLine]
+  );
+
+  const isError = ply.classification !== null && ERROR_CLASSES.includes(ply.classification);
   const loss = ply.wpLoss ?? 0;
+
   return (
-    <div className="card mt-3 p-3">
+    <div className="card mt-3 p-3.5">
       <div className="flex items-baseline gap-2">
-        <span className="notation text-sm text-text">
+        <span className="notation text-sm font-semibold text-text">
           {ply.moveNumber}{ply.color === "black" ? "…" : "."} {ply.san}
         </span>
         {ply.classification && <ClassificationIcon classification={ply.classification} />}
@@ -773,11 +840,46 @@ function PlyDetail({ ply, variant }: { ply: PlyPayload; variant: VariantId }) {
         {ply.tbHit && <span className="text-xs text-brilliant">tablebase</span>}
       </div>
 
+      {ply.classification && <p className="mt-2 text-sm leading-snug text-text">{verdict}</p>}
+      {notes.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-xs text-text-dim">
+          {notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      )}
+      {ply.tags[0]?.explanation && (
+        <p className="mt-1.5 text-xs text-text-dim">{ply.tags[0].explanation}</p>
+      )}
+
+      {alternatives.length > 0 && !playedIsBest && ply.classification !== "BOOK" && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-text-faint">Alternatives:</span>
+          {alternatives.map((option) => (
+            <span key={option.san} className="chip notation">
+              {option.san}
+              {option.label && <span className="text-text-faint">{option.label}</span>}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {bestLine.length > 0 && !playedIsBest && (
+        <p className="mt-2 text-xs text-text-faint">
+          engine line <span className="notation text-text-dim">{bestLine.join(" ")}</span>
+        </p>
+      )}
+      {isError && punishment.length > 0 && (
+        <p className="mt-1 text-xs text-text-faint">
+          the punishment <span className="notation text-warn-1">{punishment.join(" ")}</span>
+        </p>
+      )}
+
       {ply.tags.length > 0 && (
-        <div className="mt-2">
-          <p className="notation text-sm text-text">
-            {ply.tags.map((tag) => tag.motif).join("  →  ")}
-          </p>
+        <details className="mt-2">
+          <summary className="cursor-pointer select-none text-xs text-text-faint hover:text-text-dim">
+            detector evidence ({ply.tags.map((tag) => tag.motif).join(" → ")})
+          </summary>
           <ul className="mt-1 text-xs text-text-faint">
             {ply.tags.map((tag) => (
               <li key={tag.motif} className="truncate">
@@ -787,16 +889,7 @@ function PlyDetail({ ply, variant }: { ply: PlyPayload; variant: VariantId }) {
               </li>
             ))}
           </ul>
-          {ply.tags[0]?.explanation && (
-            <p className="mt-1 text-xs text-text-dim">{ply.tags[0].explanation}</p>
-          )}
-        </div>
-      )}
-
-      {refutationSan && (
-        <p className="mt-2 text-xs text-text-faint">
-          best was <span className="notation text-text-dim">{refutationSan}</span>
-        </p>
+        </details>
       )}
     </div>
   );
