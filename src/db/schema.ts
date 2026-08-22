@@ -617,6 +617,40 @@ export const puzzleAttempts = pgTable(
   (table) => [index("puzzle_attempts_user_idx").on(table.userId, table.attemptedAt)]
 );
 
+/**
+ * Per-user engine-eval cache: raw side-to-move lines keyed by position, the
+ * chess.com/lichess "we already evaluated e4 e5 Nf3" trick scoped to ONE
+ * user's own library (a user's imports share their repertoire heavily, and
+ * per-user scoping means client-computed lines can never poison anyone
+ * else's record — a GLOBAL cache would need server-side re-validation
+ * first). EPD-keyed, so repetition/50-move context is deliberately ignored
+ * — the same accepted tradeoff as Lichess cloud evals; writes are limited
+ * to the opening zone (first 40 positions) where duplication actually
+ * lives. Serving rule: any row with depth ≥ requested and multipv ≥
+ * requested, deepest first — analyzedAtDepth then records the CACHED
+ * depth, staying honest.
+ */
+export const evalCache = pgTable(
+  "eval_cache",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    variant: text("variant").notNull(),
+    epd: text("epd").notNull(),
+    depth: integer("depth").notNull(),
+    multipv: integer("multipv").notNull(),
+    /** Side-to-move POV lines, same wire shape as the ingest contract. */
+    lines: jsonb("lines").$type<
+      { multipv: number; depth: number; scoreCp: number | null; mateIn: number | null; pv: string[] }[]
+    >().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.variant, table.epd, table.depth, table.multipv] }),
+  ]
+);
+
 // --- Account system (addendum A2.2) ---
 
 export const sessions = pgTable(

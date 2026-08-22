@@ -66,7 +66,7 @@ export function SettingsSections() {
 
           <p className="mb-2 mt-5 text-xs uppercase tracking-wide text-text-faint">Pieces</p>
           <div className="flex gap-2.5">
-            {(["cburnett", "classic"] as PieceSetId[]).map((set) => (
+            {(["cburnett", "merida", "chessnut", "fantasy", "classic"] as PieceSetId[]).map((set) => (
               <button
                 key={set}
                 onClick={() => update({ pieceSet: set })}
@@ -81,7 +81,7 @@ export function SettingsSections() {
                   <PieceGlyph piece="wN" setId={set} size={30} />
                   <PieceGlyph piece="bQ" setId={set} size={30} />
                 </span>
-                <span className="text-xs text-text-dim">{set === "cburnett" ? "cburnett" : "Classic"}</span>
+                <span className="text-xs text-text-dim">{set === "classic" ? "Classic" : set}</span>
               </button>
             ))}
           </div>

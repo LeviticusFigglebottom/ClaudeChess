@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { handleApi, readJson, requireUser } from "@/lib/account/api";
 import { AccountError, isVerified } from "@/lib/account/types";
-import { ingestPositionEvals, type IngestPosition } from "@/lib/analysis/ingest";
+import {
+  ingestPositionEvals,
+  precacheFromEvalCache,
+  type IngestPosition,
+} from "@/lib/analysis/ingest";
+import { ANALYSIS_SETTINGS } from "@/lib/eval";
 import { createTablebaseClient } from "@/lib/analysis/tablebase";
 
 /**
@@ -28,7 +33,28 @@ export async function POST(request: Request) {
       );
     }
     const body = await readJson(request);
-    if (typeof body.gameId !== "string" || !Array.isArray(body.positions)) {
+    if (typeof body.gameId !== "string") {
+      throw new AccountError("bad_action", "gameId required.");
+    }
+    // Precache mode: serve the opening zone from the user's eval cache
+    // before any engine runs (no positions payload).
+    if (body.precache && typeof body.precache === "object") {
+      const depth = Number((body.precache as { depth?: unknown }).depth);
+      if (depth !== ANALYSIS_SETTINGS.provisional.depth && depth !== ANALYSIS_SETTINGS.review.depth) {
+        throw new AccountError("bad_action", "precache depth must be a sweep tier.");
+      }
+      try {
+        return NextResponse.json(
+          await precacheFromEvalCache(db, body.gameId, user.id, createTablebaseClient(db), depth)
+        );
+      } catch (error) {
+        if (error instanceof Error && error.message === "game_missing") {
+          throw new AccountError("game_missing", "No such game.", 404);
+        }
+        throw error;
+      }
+    }
+    if (!Array.isArray(body.positions)) {
       throw new AccountError("bad_action", "gameId and positions[] required.");
     }
     if (body.positions.length === 0 || body.positions.length > MAX_POSITIONS_PER_CALL) {

@@ -160,7 +160,21 @@ export function GamesClient() {
         </div>
       )}
       <div className="mt-6">
-        {!games && <p className="text-sm text-text-faint">{error ?? "Loading…"}</p>}
+        {!games && error && <p className="text-sm text-warn-1">{error}</p>}
+        {!games && !error && (
+          <div className="card overflow-hidden">
+            {[0, 1, 2, 3, 4].map((row) => (
+              <div key={row} className="flex items-center gap-3 border-b border-edge px-4 py-3 last:border-0">
+                <div className="skeleton h-4 w-6" />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="skeleton h-3.5 w-40" />
+                  <div className="skeleton h-3 w-24" />
+                </div>
+                <div className="skeleton h-3 w-14" />
+              </div>
+            ))}
+          </div>
+        )}
         {games && games.length === 0 && (
           <p className="text-sm text-text-faint">
             No games yet — play a bot on the Play tab or import your history above.

@@ -6,7 +6,7 @@ import { ensureUser, type AuthShape } from "@/lib/account";
 import { createTestDb, type TestDb } from "@/lib/account/test-db";
 import { GamePosition } from "@/lib/chess/position";
 import { createTablebaseClient } from "./tablebase";
-import { ingestPositionEvals, type IngestPosition } from "./ingest";
+import { ingestPositionEvals, precacheFromEvalCache, type IngestPosition } from "./ingest";
 
 /**
  * Client-batch ingest semantics (the §3.3 revision): raw client lines run
@@ -30,22 +30,29 @@ const fens: string[] = [];
 const tb = () => createTablebaseClient(t.db, { enabled: false });
 
 /**
- * Single engine line for a position: cp is SIDE-TO-MOVE POV, as UCI speaks.
- * The pv deliberately differs from the move actually played — a pv equal to
- * the played move classifies BEST and would bypass the loss bands the tests
- * pin.
+ * Three engine lines for a position (full review MultiPV — the eval cache
+ * only serves full-quality rows): cp is SIDE-TO-MOVE POV, as UCI speaks.
+ * The pvs deliberately differ from the move actually played — a pv1 equal
+ * to the played move classifies BEST and would bypass the loss bands the
+ * tests pin — and the cp gaps stay small so GREAT never fires.
  */
 function line(fen: string, cp: number, depth: number, excludeUci?: string) {
   const position = GamePosition.fromFen(fen, "chess960");
-  const pv = position
+  const moves = position
     .legalMovesUci()
     .filter((uci) => uci !== excludeUci)
-    .slice(0, 1);
-  return { multipv: 1, depth, scoreCp: cp, mateIn: null, pv };
+    .slice(0, 3);
+  return moves.map((uci, i) => ({
+    multipv: i + 1,
+    depth,
+    scoreCp: cp - i * 20,
+    mateIn: null,
+    pv: [uci],
+  }));
 }
 
 function position(index: number, cp: number, depth: number): IngestPosition {
-  return { index, depth, lines: [line(fens[index]!, cp, depth, MOVES[index])] };
+  return { index, depth, lines: line(fens[index]!, cp, depth, MOVES[index]) };
 }
 
 async function rowsNow() {
@@ -164,7 +171,7 @@ describe("client-batch ingest", () => {
     const result = await ingestPositionEvals(t.db, gameId, userId, tb(), [
       // Borderline ply 2's pair, deeper eval decisive → BLUNDER band.
       position(1, 0, 24),
-      { index: 2, depth: 24, lines: [line(fens[2]!, 250, 24, MOVES[2])] },
+      { index: 2, depth: 24, lines: line(fens[2]!, 250, 24, MOVES[2]) },
       // Non-borderline pair (ply 4, loss ≈ 0) — must be refused.
       position(3, -100, 24),
       position(4, 100, 24),
@@ -196,6 +203,59 @@ describe("client-batch ingest", () => {
   it("refuses another user's game", async () => {
     await expect(
       ingestPositionEvals(t.db, gameId, randomUUID(), tb(), [position(0, 0, 18)])
+    ).rejects.toThrow("game_missing");
+  });
+
+  it("precache serves a second game's shared opening from the eval cache", async () => {
+    // Same user, same moves — the write-through from the earlier passes
+    // must cover this game with ZERO lines supplied.
+    const replay = GamePosition.initial("standard");
+    const plyRows = MOVES.map((uci, index) => {
+      const fenBefore = replay.fen();
+      const move = replay.moveUci(uci)!;
+      return {
+        ply: index + 1,
+        moveNumber: Math.floor(index / 2) + 1,
+        color: (index % 2 === 0 ? "white" : "black") as "white" | "black",
+        san: move.san,
+        uci,
+        fenBefore,
+        fenAfter: replay.fen(),
+        clockMsRemaining: null,
+        timeSpentMs: null,
+      };
+    });
+    const inserted = await t.db
+      .insert(games)
+      .values({
+        userId,
+        variant: "chess960",
+        startFen: null,
+        source: "local",
+        pgn: "",
+        whiteName: "w",
+        blackName: "b",
+        userColor: "white",
+        result: "0-1",
+        playedAt: new Date(),
+        importedAt: new Date(),
+      })
+      .returning();
+    const secondGameId = inserted[0]!.id;
+    await t.db.insert(plies).values(plyRows.map((row) => ({ ...row, gameId: secondGameId })));
+
+    const result = await precacheFromEvalCache(t.db, secondGameId, userId, tb(), 18);
+    expect(result.covered).toBe(4);
+    const rows = await t.db
+      .select()
+      .from(plies)
+      .where(eq(plies.gameId, secondGameId))
+      .orderBy(asc(plies.ply));
+    expect(rows.every((row) => row.classification !== null)).toBe(true);
+    expect(rows.every((row) => (row.analyzedAtDepth ?? 0) >= 18)).toBe(true);
+    // A different user gets no coverage from this cache.
+    await expect(
+      precacheFromEvalCache(t.db, secondGameId, randomUUID(), tb(), 18)
     ).rejects.toThrow("game_missing");
   });
 });
