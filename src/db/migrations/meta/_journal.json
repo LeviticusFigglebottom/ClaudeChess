@@ -99,6 +99,20 @@
       "when": 1787406839302,
       "tag": "0013_sloppy_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787410929131,
+      "tag": "0014_groovy_northstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1787411580718,
+      "tag": "0015_slim_colonel_america",
+      "breakpoints": true
     }
   ]
 }

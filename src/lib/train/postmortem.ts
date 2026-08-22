@@ -49,7 +49,7 @@ export async function postmortemPrompts(
       wpLoss: plies.wpLoss,
     })
     .from(plies)
-    .where(and(eq(plies.gameId, gameId), eq(plies.isCritical, true)))
+    .where(and(eq(plies.gameId, gameId), eq(plies.isCritical, true), eq(plies.degraded, false)))
     .orderBy(asc(plies.ply));
   // The user's own critical moves, biggest stakes first, capped at 5.
   const own = rows

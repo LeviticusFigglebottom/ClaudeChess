@@ -12,14 +12,21 @@ import type { VariantId } from "@/lib/chess/variant";
 export class AnalysisPool {
   private readonly cap: number;
   private readonly hashMb: number;
+  /** Test hook: forwarded to every spawned engine (synthetic-hang tests). */
+  private readonly engineOpts: { enginePath?: string };
   private partitions = new Map<VariantId, { idle: ServerEngine[]; busy: number }>();
   private total = 0;
-  private waiters: { variant: VariantId; resolve: (engine: ServerEngine) => void }[] = [];
+  private waiters: {
+    variant: VariantId;
+    resolve: (engine: ServerEngine) => void;
+    reject: (error: unknown) => void;
+  }[] = [];
   private closed = false;
 
-  constructor(opts: { cap?: number; hashMb?: number } = {}) {
+  constructor(opts: { cap?: number; hashMb?: number; enginePath?: string } = {}) {
     this.cap = Math.max(1, opts.cap ?? 3);
     this.hashMb = opts.hashMb ?? 128;
+    this.engineOpts = opts.enginePath ? { enginePath: opts.enginePath } : {};
   }
 
   async withEngine<T>(variant: VariantId, fn: (engine: ServerEngine) => Promise<T>): Promise<T> {
@@ -52,7 +59,7 @@ export class AnalysisPool {
       this.total++;
       partition.busy++;
       try {
-        const engine = new ServerEngine(variant);
+        const engine = new ServerEngine(variant, this.engineOpts);
         await engine.init({ hashMb: this.hashMb });
         return engine;
       } catch (error) {
@@ -73,14 +80,39 @@ export class AnalysisPool {
     }
     // Everything busy: wait for a release of this variant (or any, which
     // frees a slot for retirement).
-    return new Promise((resolve) => {
-      this.waiters.push({ variant, resolve });
+    return new Promise((resolve, reject) => {
+      this.waiters.push({ variant, resolve, reject });
     });
   }
 
   private release(engine: ServerEngine): void {
     const partition = this.partition(engine.variant);
     partition.busy--;
+    // Watchdog policy (§3.3): a dead engine (killed mid-wedge) is gone, and
+    // a worker that soft-breached its budget three times this session is
+    // retired — chronic slowness is a degraded worker, not bad luck. Either
+    // way the slot frees up; a fresh engine spawns for any waiter.
+    if (engine.dead || engine.softBreaches >= 3) {
+      if (!engine.dead) engine.quit();
+      this.total--;
+      const waiter = this.waiters.shift();
+      if (waiter) {
+        void (async () => {
+          this.total++;
+          this.partition(waiter.variant).busy++;
+          try {
+            const fresh = new ServerEngine(waiter.variant, this.engineOpts);
+            await fresh.init({ hashMb: this.hashMb });
+            waiter.resolve(fresh);
+          } catch (error) {
+            this.total--;
+            this.partition(waiter.variant).busy--;
+            waiter.reject(error);
+          }
+        })();
+      }
+      return;
+    }
     // Serve a same-variant waiter directly.
     const index = this.waiters.findIndex((waiter) => waiter.variant === engine.variant);
     if (index !== -1) {
@@ -97,7 +129,7 @@ export class AnalysisPool {
       void (async () => {
         this.total++;
         this.partition(other.variant).busy++;
-        const fresh = new ServerEngine(other.variant);
+        const fresh = new ServerEngine(other.variant, this.engineOpts);
         await fresh.init({ hashMb: this.hashMb });
         other.resolve(fresh);
       })();

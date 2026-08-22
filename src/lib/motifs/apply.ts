@@ -1,6 +1,7 @@
 import { asc, eq, inArray } from "drizzle-orm";
 import { blunderTags, games, plies } from "@/db/schema";
 import type { Db } from "@/lib/account/types";
+import { budgetForMs } from "@/lib/analysis/budgets";
 import type { AnalysisPool } from "@/lib/analysis/pool";
 import type { TablebaseClient } from "@/lib/analysis/tablebase";
 import { detectMotifs, type MotifDetectionInput } from "./detect";
@@ -33,7 +34,11 @@ export async function detectAndStoreMotifs(
   const errorRows = rows.filter(
     (row) =>
       row.classification !== null &&
-      (ERROR_CLASSES as readonly string[]).includes(row.classification)
+      (ERROR_CLASSES as readonly string[]).includes(row.classification) &&
+      // §3.3 watchdog: degraded plies carry partial evals — they are
+      // excluded from every §9 statistic, so they get no motif tags (the
+      // game-wide delete above already cleared any stale ones).
+      !row.degraded
   );
 
   // Clear existing tags for the WHOLE game, not just current error plies —
@@ -58,7 +63,9 @@ export async function detectAndStoreMotifs(
         const result = await opts.pool.withEngine(
           game.variant as Parameters<AnalysisPool["withEngine"]>[0],
           (engine) =>
-            engine.analyze(row.fenAfter, [], { depth: 16, multipv: 1, maxMs: 15_000 })
+            // Fitted §3.3 budget; on a wedge the engine rejects (and is
+            // replaced by the pool) and the catch below degrades gracefully.
+            engine.analyze(row.fenAfter, [], { depth: 16, multipv: 1, maxMs: budgetForMs(16, 1) })
         );
         refutationPv = result.infos[0]?.pv ?? [];
       } catch {

@@ -1,5 +1,6 @@
 "use client";
 
+import { fetchExplorerDirect } from "@/lib/explorer/shape";
 import { useEffect, useState } from "react";
 import { useAuth } from "./auth-context";
 
@@ -47,13 +48,25 @@ export function ExplorerPanel({
     }
     setState("loading");
     const timer = setTimeout(() => {
-      fetch(`/api/explorer?fen=${encodeURIComponent(fen)}`)
-        .then(async (response) => {
+      // Client-direct first: the user's browser (residential IP) can reach
+      // explorer.lichess.ovh even though datacenter egress cannot; the
+      // server proxy stays as the fallback and cache path.
+      void (async () => {
+        const direct = await fetchExplorerDirect(fen);
+        if (direct) {
+          setData(direct as ExplorerPayload);
+          setState("idle");
+          return;
+        }
+        try {
+          const response = await fetch(`/api/explorer?fen=${encodeURIComponent(fen)}`);
           if (!response.ok) throw new Error(String(response.status));
           setData((await response.json()) as ExplorerPayload);
           setState("idle");
-        })
-        .catch(() => setState("error"));
+        } catch {
+          setState("error");
+        }
+      })();
     }, 350);
     return () => clearTimeout(timer);
   }, [fen, variant, auth.status]);

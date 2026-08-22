@@ -4,6 +4,7 @@ import type { Db } from "@/lib/account/types";
 import { AccountError } from "@/lib/account/types";
 import type { VariantId } from "@/lib/chess/variant";
 import { bandsForRating, empiricalWhiteWp, fetchExplorerPosition } from "@/lib/explorer";
+import { fetchAggregatePosition } from "@/lib/explorer/local";
 import { openingForEpd, MAX_BOOK_PLY } from "@/lib/chess/openings";
 import { computePositionTags, type PositionTags } from "./position-tags";
 
@@ -54,6 +55,7 @@ export async function nextCalibrationPosition(
       .where(
         and(
           eq(games.userId, userId),
+          eq(plies.degraded, false),
           eq(games.variant, variant),
           isNotNull(plies.wpBefore),
           criticalOnly ? eq(plies.isCritical, true) : undefined,
@@ -123,10 +125,14 @@ export async function recordCalibrationAttempt(
     if (openingForEpd(epd) !== null) {
       try {
         const rating = await userRatingHint(db, userId);
-        const { position } = await fetchExplorerPosition(db, row.fen, {
+        const opts = {
           speeds: ["blitz", "rapid", "classical"],
           ratings: bandsForRating(rating),
-        });
+        };
+        // Local aggregate first (Task 2b) — the live explorer is enrichment.
+        const position =
+          (await fetchAggregatePosition(db, row.fen, opts)) ??
+          (await fetchExplorerPosition(db, row.fen, opts)).position;
         empiricalWp = empiricalWhiteWp(position);
       } catch {
         empiricalWp = null; // upstream down — the primary score stands alone

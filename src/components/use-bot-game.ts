@@ -323,8 +323,24 @@ export function useBotGame(prefs: Prefs, onFinished?: (payload: SaveGamePayload)
       if (generation !== generationRef.current) return;
 
       if (!applyClockForMover()) return;
-      const played = position.moveUci(uci);
-      if (!played) throw new Error(`bot chose illegal move ${uci}`);
+      let played = position.moveUci(uci);
+      if (!played) {
+        // Defensive (same-square-report audit): the facade rejects any
+        // malformed/illegal choice (incl. from==to), and an uncaught throw
+        // here would freeze the bot mid-game with no feedback. Recover
+        // visibly: engine's pv1, else any legal move — never a dead game.
+        console.error(`[bot] chose illegal move ${uci} — recovering`);
+        const fallback = deep[0]?.pv[0];
+        if (fallback && fallback !== uci) played = position.moveUci(fallback);
+        if (!played) {
+          const any = position.legalMovesUci()[0];
+          if (any) played = position.moveUci(any);
+        }
+        if (!played) {
+          checkNaturalEnd();
+          return;
+        }
+      }
       recordMoveClock(setup.playerColor === "w" ? "b" : "w");
       play(soundForMove(played, position.isCheck()));
       refresh();
