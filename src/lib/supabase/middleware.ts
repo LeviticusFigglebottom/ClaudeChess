@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { supabaseUrl } from "./env";
 
 /**
  * Session refresh for @supabase/ssr: keeps the auth token cookie fresh so
@@ -8,7 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
  * clean pass-through — the app runs in local-only mode.
  */
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = supabaseUrl();
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   let response = NextResponse.next({ request });
   if (!url || !anonKey) return response;
