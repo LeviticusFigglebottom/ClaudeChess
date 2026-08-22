@@ -20,13 +20,28 @@ const target = new URL("/engine-check", baseUrl).toString();
 
 const launchOpts = {};
 if (process.env.CHROMIUM_PATH) launchOpts.executablePath = process.env.CHROMIUM_PATH;
+// Egress-proxied environments (CI, remote dev containers): Chromium does not
+// read HTTPS_PROXY on its own, so pass it through for non-localhost targets.
+// The proxy's CA must already be in the browser trust store — never disable
+// TLS verification here.
+const targetHost = new URL(baseUrl).hostname;
+if (process.env.HTTPS_PROXY && targetHost !== "localhost" && targetHost !== "127.0.0.1") {
+  launchOpts.proxy = {
+    server: process.env.HTTPS_PROXY,
+    bypass: process.env.NO_PROXY ?? "localhost,127.0.0.1",
+  };
+  // TLS-intercepting proxies that cope with OpenSSL's TLS 1.3 can still
+  // reset BoringSSL's 1.3 ClientHello; 1.2 to the proxy keeps certificate
+  // verification fully on (the CA bundle must be in the browser trust store).
+  launchOpts.args = [...(launchOpts.args ?? []), "--ssl-version-max=tls1.2"];
+}
 
 let browser;
 try {
   browser = await chromium.launch(launchOpts);
 } catch (error) {
   console.error(`Could not launch Chromium (${error.message}); retrying with CHROMIUM_PATH=/opt/pw-browsers/chromium`);
-  browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium" });
+  browser = await chromium.launch({ ...launchOpts, executablePath: "/opt/pw-browsers/chromium" });
 }
 
 const page = await browser.newPage();

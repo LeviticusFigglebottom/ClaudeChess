@@ -1,3 +1,4 @@
 {"at":"2026-08-21T13:53:00Z","url":"http://localhost:3000/engine-check","isolated":true,"depth20Ms":1062,"detail":"depth 20 in 1062ms (1.5 Mnps, cp 36) — Phase 0 gate run (recorded retroactively)","pass":true}
 {"at":"2026-08-21T15:05:00Z","url":"http://localhost:3000/engine-check","isolated":true,"depth20Ms":1636,"detail":"depth 20 in 1636ms (1.6 Mnps, cp 37) — Phase 0.5 gate run (recorded retroactively)","pass":true}
 {"at":"2026-08-21T23:53:11.195Z","url":"http://localhost:3000/engine-check","isolated":true,"depth20Ms":1179,"detail":"depth 20 in 1179ms (1.6 Mnps, cp 39)","pass":true}
+{"at":"2026-08-22T10:49:03.249Z","url":"https://claude-chess-nine.vercel.app/engine-check","isolated":true,"depth20Ms":823,"detail":"depth 20 in 823ms (2.0 Mnps, cp 35)","pass":true}
