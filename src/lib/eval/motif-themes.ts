@@ -152,6 +152,63 @@ export const MOTIF_TO_PUZZLE_THEMES: Record<BlunderMotif, MotifDrillMapping> = {
   },
 };
 
+/**
+ * §9.2 headline stat: is a player losing to named TACTICS or to quiet
+ * POSITIONAL play? Every motif declares its nature (Record type forces new
+ * motifs to choose); UNCLEAR counts as positional — the three-way
+ * characterization (refutation, structure, forgone) established that the
+ * survivors are quiet-both-sides positional errors, which is a diagnosis,
+ * not a detection failure. "other" (clock/search-habit) sits outside the
+ * tactical-to-positional ratio.
+ */
+export type MotifNature = "tactical" | "positional" | "other";
+
+export const MOTIF_NATURE: Record<BlunderMotif, MotifNature> = {
+  HANGING_PIECE: "tactical",
+  OVERLOADED_DEFENDER: "tactical",
+  PINNED_PIECE_MOVED: "tactical",
+  BACK_RANK: "tactical",
+  FORK_ALLOWED: "tactical",
+  SKEWER_ALLOWED: "tactical",
+  DISCOVERED_ATTACK_MISSED: "tactical",
+  TRAPPED_PIECE: "tactical",
+  REMOVING_THE_DEFENDER: "tactical",
+  ZWISCHENZUG_MISSED: "tactical",
+  KING_SAFETY_COLLAPSE: "tactical",
+  MATERIALISM: "tactical",
+  PAWN_RACE_MISCOUNT: "tactical",
+  MISSED_FORK: "tactical",
+  MISSED_PIN: "tactical",
+  MISSED_SKEWER: "tactical",
+  MISSED_DISCOVERED_ATTACK: "tactical",
+  MISSED_BACK_RANK: "tactical",
+  MISSED_OVERLOAD: "tactical",
+  MISSED_REMOVING_THE_DEFENDER: "tactical",
+  MISSED_TRAPPED_PIECE: "tactical",
+  MISSED_ZWISCHENZUG: "tactical",
+  PAWN_STRUCTURE_COLLAPSE: "positional",
+  PREMATURE_ATTACK: "positional",
+  PASSIVITY: "positional",
+  ENDGAME_TECHNIQUE: "positional",
+  OPPOSITION_LOST: "positional",
+  HOLE_CREATED: "positional",
+  OUTPOST_CONCEDED: "positional",
+  BISHOP_PAIR_SURRENDERED: "positional",
+  STRUCTURE_DAMAGED: "positional",
+  BAD_PIECE_PLACEMENT: "positional",
+  FILE_OPENED_TOWARD_OWN_KING: "positional",
+  SPACE_CONCEDED: "positional",
+  GOOD_PIECE_TRADED: "positional",
+  PAWN_BREAK_MISSED: "positional",
+  KING_WALK: "positional",
+  UNCLEAR: "positional",
+  TIME_PRESSURE: "other",
+  TUNNEL_VISION_POST_FORCING: "other",
+};
+
+/** The user-facing label for UNCLEAR — a category, not a detection failure. */
+export const UNCLEAR_LABEL = "Positional / quiet errors";
+
 export function drillThemesForMotifs(motifs: BlunderMotif[]): string[] {
   const themes = new Set<string>();
   for (const motif of motifs) {

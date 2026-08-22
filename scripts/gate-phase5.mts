@@ -133,6 +133,37 @@ async function main() {
     fpReport.drill.motifs.length === 3 && fpReport.drill.themes.length >= 2,
     `motifs ${fpReport.drill.motifs.join(",")} → themes ${fpReport.drill.themes.join(",")}`
   );
+  // Final task: UNCLEAR as a first-class output — nature headline, swing
+  // subdivision, and "engine preferred" rows for the review-and-work-it-out
+  // training mode. Presentation over data that already exists.
+  const fpFull = (fingerprint.body as {
+    report: {
+      nature: { tactical: number; positional: number; other: number; tacticalShare: number };
+      unclear: { count: number; share: number; mates: number; material: number; quiet: number };
+    };
+  }).report;
+  record(
+    "§9.2 tactical-to-positional headline (UNCLEAR counted as positional)",
+    fingerprint.ok &&
+      fpFull.nature.tactical > 0 &&
+      fpFull.nature.positional > 0 &&
+      fpFull.nature.tacticalShare > 0 &&
+      fpFull.nature.tacticalShare < 1,
+    `${(100 * fpFull.nature.tacticalShare).toFixed(1)}% tactical (${fpFull.nature.tactical}/${fpFull.nature.positional}/${fpFull.nature.other})`
+  );
+  record(
+    "§9.2 UNCLEAR swing subdivision partitions its count (mate/material/quiet)",
+    fpFull.unclear.count > 0 &&
+      fpFull.unclear.mates + fpFull.unclear.material + fpFull.unclear.quiet === fpFull.unclear.count,
+    `${fpFull.unclear.count} unclear = ${fpFull.unclear.quiet} quiet + ${fpFull.unclear.material} material + ${fpFull.unclear.mates} mate`
+  );
+  const unclearList = await get("/api/train/fingerprint?list=1&motif=UNCLEAR");
+  const unclearRows = (unclearList.body as { errors: { bestUci: string | null; bestSan: string | null }[] }).errors;
+  record(
+    "§9.2 UNCLEAR rows carry the engine's preferred move (no mechanism claim)",
+    unclearList.ok && unclearRows.length > 0 && unclearRows.every((row) => row.bestUci !== null),
+    `${unclearRows.length} rows, e.g. engine preferred ${unclearRows[0]?.bestSan ?? unclearRows[0]?.bestUci}`
+  );
   const errorList = await get("/api/train/fingerprint?list=1");
   const firstError = (errorList.body as { errors: { plyId: number }[] }).errors[0];
   const explain = firstError ? await post("/api/classify-blunder", { plyId: firstError.plyId }) : null;

@@ -3,7 +3,9 @@ import { blunderTags, games, plies } from "@/db/schema";
 import type { Db } from "@/lib/account/types";
 import { AccountError } from "@/lib/account/types";
 import type { VariantId } from "@/lib/chess/variant";
-import { drillThemesForMotifs, type BlunderMotif } from "@/lib/eval/motif-themes";
+import { GamePosition } from "@/lib/chess/position";
+import { drillThemesForMotifs, MOTIF_NATURE, type BlunderMotif } from "@/lib/eval/motif-themes";
+import { classifySwing } from "@/lib/motifs/swing";
 import { cachedJsonCall, evidenceHash, llmAvailable } from "@/lib/llm/client";
 
 /**
@@ -25,6 +27,19 @@ export interface FingerprintReport {
   trend: { month: string; errorPlies: number; byMotif: Record<string, number> }[];
   /** Drill themes for the top-3 motifs (B1.2 map; drill-unavailable marked). */
   drill: { motifs: string[]; themes: string[]; unavailable: string[] };
+  /**
+   * Headline stat: named-tactical vs positional/quiet error counts and the
+   * tactical share of that pair ("other" = clock/search-habit, outside the
+   * ratio). A player at 80% named tactics needs different work than one at
+   * 40% — the ratio IS the diagnosis.
+   */
+  nature: { tactical: number; positional: number; other: number; tacticalShare: number };
+  /**
+   * UNCLEAR as a first-class category — positional / quiet errors, not a
+   * detection failure — with its swing subdivision (does the punishment
+   * mate, win material, or stay quiet?).
+   */
+  unclear: { count: number; share: number; mates: number; material: number; quiet: number };
 }
 
 export async function fingerprintReport(
@@ -75,12 +90,68 @@ export async function fingerprintReport(
     (motif) => drillThemesForMotifs([motif]).length === 0
   );
 
+  // Headline nature split (tactical vs positional; UNCLEAR is positional).
+  const nature = { tactical: 0, positional: 0, other: 0, tacticalShare: 0 };
+  for (const row of rows) nature[MOTIF_NATURE[row.motif as BlunderMotif] ?? "other"]++;
+  const named = nature.tactical + nature.positional;
+  nature.tacticalShare = named > 0 ? nature.tactical / named : 0;
+
+  // UNCLEAR swing subdivision — pure replay over the stored record (the
+  // refutation of ply N is ply N+1's stored pv1).
+  const unclearPlies = await db
+    .select({
+      gameId: plies.gameId,
+      ply: plies.ply,
+      fenBefore: plies.fenBefore,
+      fenAfter: plies.fenAfter,
+      uci: plies.uci,
+    })
+    .from(blunderTags)
+    .innerJoin(plies, eq(blunderTags.plyId, plies.id))
+    .innerJoin(games, eq(plies.gameId, games.id))
+    .where(
+      and(
+        eq(games.userId, userId),
+        eq(games.variant, variant),
+        eq(blunderTags.rank, 1),
+        eq(blunderTags.motif, "UNCLEAR")
+      )
+    );
+  const unclear = { count: unclearPlies.length, share: total > 0 ? unclearPlies.length / total : 0, mates: 0, material: 0, quiet: 0 };
+  if (unclearPlies.length > 0) {
+    const gameIds = [...new Set(unclearPlies.map((row) => row.gameId))];
+    const nextPlies = await db
+      .select({ gameId: plies.gameId, ply: plies.ply, pv1: plies.pv1 })
+      .from(plies)
+      .where(
+        and(
+          inArray(plies.gameId, gameIds),
+          inArray(plies.ply, [...new Set(unclearPlies.map((row) => row.ply + 1))])
+        )
+      );
+    const refutations = new Map(nextPlies.map((row) => [`${row.gameId}:${row.ply}`, (row.pv1 as string[] | null) ?? []]));
+    for (const row of unclearPlies) {
+      const kind = classifySwing({
+        fenBefore: row.fenBefore,
+        fenAfter: row.fenAfter,
+        movedUci: row.uci,
+        refutationPv: refutations.get(`${row.gameId}:${row.ply + 1}`) ?? [],
+        variant,
+      });
+      if (kind === "mate") unclear.mates++;
+      else if (kind === "material") unclear.material++;
+      else unclear.quiet++;
+    }
+  }
+
   return {
     variant,
     errorPlies: total,
     distribution,
     trend,
     drill: { motifs: topMotifs, themes, unavailable },
+    nature,
+    unclear,
   };
 }
 
@@ -178,7 +249,12 @@ export async function explainBlunder(
   return { explanation: value.explanation, cached, llm: true };
 }
 
-/** Ids of the user's error plies (for the fingerprint list UI). */
+/**
+ * The user's error plies for the fingerprint list UI. Each row carries the
+ * engine's preferred move (pv1[0], in SAN where it replays) so UNCLEAR
+ * instances can render "the engine preferred this — work out why" with no
+ * mechanism claim and no invented explanation.
+ */
 export async function listErrorPlies(
   db: Db,
   userId: string,
@@ -186,7 +262,16 @@ export async function listErrorPlies(
   motif?: string,
   limit = 30
 ): Promise<
-  { plyId: number; gameId: string; ply: number; san: string; motif: string; wpLoss: number | null }[]
+  {
+    plyId: number;
+    gameId: string;
+    ply: number;
+    san: string;
+    motif: string;
+    wpLoss: number | null;
+    bestUci: string | null;
+    bestSan: string | null;
+  }[]
 > {
   const rows = await db
     .select({
@@ -196,6 +281,8 @@ export async function listErrorPlies(
       san: plies.san,
       motif: blunderTags.motif,
       wpLoss: plies.wpLoss,
+      fenBefore: plies.fenBefore,
+      pv1: plies.pv1,
       playedAt: games.playedAt,
     })
     .from(blunderTags)
@@ -211,5 +298,16 @@ export async function listErrorPlies(
     )
     .orderBy(desc(games.playedAt))
     .limit(limit);
-  return rows.map(({ playedAt: _unused, ...row }) => row);
+  return rows.map(({ playedAt: _unused, fenBefore, pv1, ...row }) => {
+    const bestUci = ((pv1 as string[] | null) ?? [])[0] ?? null;
+    let bestSan: string | null = null;
+    if (bestUci) {
+      try {
+        bestSan = GamePosition.fromFen(fenBefore, variant).moveUci(bestUci)?.san ?? null;
+      } catch {
+        bestSan = null;
+      }
+    }
+    return { ...row, bestUci, bestSan };
+  });
 }
