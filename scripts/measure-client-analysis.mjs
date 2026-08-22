@@ -156,10 +156,15 @@ try {
       tReview = Date.now();
       console.log(`t_review (pass 2 complete, depth 18 everywhere): ${seconds(tReview)}s`);
     }
-    const busy = await page
+    const busyButton = await page
       .getByRole("button", { name: "Analyzing…" })
       .isVisible()
       .catch(() => false);
+    const busyTail = await page
+      .getByText(/in the background/)
+      .isVisible()
+      .catch(() => false);
+    const busy = busyButton || busyTail;
     if (atReview && !busy && tDone === null) {
       tDone = Date.now();
       const accuracy = state.body?.accuracy;

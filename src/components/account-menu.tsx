@@ -214,7 +214,7 @@ function AuthDialog({ mode, onClose }: { mode: "convert" | "signin"; onClose: ()
               meantime.
             </p>
             <button
-              className="mt-4 w-full rounded bg-lcd px-3 py-1.5 text-sm font-medium text-field hover:opacity-90"
+              className="btn-primary mt-4 w-full px-3 py-1.5 text-sm"
               onClick={onClose}
             >
               Done
@@ -228,6 +228,8 @@ function AuthDialog({ mode, onClose }: { mode: "convert" | "signin"; onClose: ()
               </span>
               <input
                 type="email"
+                name="email"
+                autoComplete="email"
                 required
                 autoFocus
                 value={email}
@@ -239,8 +241,12 @@ function AuthDialog({ mode, onClose }: { mode: "convert" | "signin"; onClose: ()
               <span className="mb-1 block text-xs uppercase tracking-wide text-text-faint">
                 Password
               </span>
+              {/* Correct autocomplete semantics = the browser/password manager
+                  actually offers to SAVE the login and autofills it later. */}
               <input
                 type="password"
+                name="password"
+                autoComplete={mode === "convert" ? "new-password" : "current-password"}
                 required
                 minLength={8}
                 value={password}
@@ -253,7 +259,7 @@ function AuthDialog({ mode, onClose }: { mode: "convert" | "signin"; onClose: ()
               <button
                 type="submit"
                 disabled={busy}
-                className="flex-1 rounded bg-lcd px-3 py-1.5 text-sm font-medium text-field hover:opacity-90 disabled:opacity-50"
+                className="btn-primary flex-1 px-3 py-1.5 text-sm"
               >
                 {busy ? "…" : mode === "convert" ? "Create account" : "Sign in"}
               </button>

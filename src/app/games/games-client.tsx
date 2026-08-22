@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-context";
 import { ApiError } from "@/lib/account/client";
+import {
+  clientBatchCapability,
+  runClientBatchAnalysis,
+  type BatchProgress,
+} from "@/lib/analysis/client-batch";
 
 /**
  * Games list + the import surface (Phase 2, C1): connect your own chess.com /
@@ -61,6 +66,13 @@ export function GamesClient() {
   const auth = useAuth();
   const [games, setGames] = useState<GameRowPayload[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [batch, setBatch] = useState<{
+    index: number;
+    total: number;
+    opponent: string;
+    phase: BatchProgress | null;
+  } | null>(null);
+  const batchAbortRef = useRef(false);
 
   const reload = useCallback(() => {
     api<{ games: GameRowPayload[] }>("/api/games?limit=50")
@@ -71,6 +83,35 @@ export function GamesClient() {
   useEffect(() => {
     if (auth.status === "ready") reload();
   }, [auth.status, reload]);
+
+  // "Analyze all": sequential client-side batch over every unanalyzed game
+  // (the library analyzes itself while the tab is open). Games that are
+  // eval-complete but still provisional finish when opened (auto-resume).
+  const unanalyzed = (games ?? []).filter(
+    (game) => !game.isStudy && game.plyCount > 0 && game.analyzedCount < game.plyCount
+  );
+  const analyzeAll = useCallback(async () => {
+    batchAbortRef.current = false;
+    const queue = unanalyzed;
+    for (const [index, game] of queue.entries()) {
+      if (batchAbortRef.current) break;
+      const opponent = game.userColor === "black" ? game.whiteName : game.blackName;
+      setBatch({ index: index + 1, total: queue.length, opponent, phase: null });
+      const result = await runClientBatchAnalysis(
+        game.id,
+        (phase) =>
+          setBatch({ index: index + 1, total: queue.length, opponent, phase }),
+        () => undefined
+      );
+      if (!result.ok) {
+        setError(`Batch analysis stopped on ${opponent}: ${result.error}`);
+        break;
+      }
+      reload();
+    }
+    setBatch(null);
+    reload();
+  }, [unanalyzed, reload]);
 
   if (auth.status === "disabled" || auth.status === "offline") {
     return (
@@ -86,6 +127,38 @@ export function GamesClient() {
   return (
     <Shell>
       <ImportPanel onImported={reload} />
+      {unanalyzed.length > 0 && clientBatchCapability().ok && (
+        <div className="card mt-4 flex items-center gap-3 p-3">
+          {batch ? (
+            <>
+              <button
+                onClick={() => {
+                  batchAbortRef.current = true;
+                }}
+                className="btn-ghost px-3 py-1.5 text-sm"
+              >
+                Stop after this game
+              </button>
+              <p className="notation min-w-0 flex-1 truncate text-xs text-text-dim">
+                analyzing {batch.index}/{batch.total} — vs {batch.opponent}
+                {batch.phase
+                  ? ` · ${batch.phase.phase} ${batch.phase.done}/${batch.phase.total}`
+                  : "…"}
+              </p>
+            </>
+          ) : (
+            <>
+              <button onClick={() => void analyzeAll()} className="btn-primary px-4 py-1.5 text-sm">
+                Analyze all ({unanalyzed.length})
+              </button>
+              <p className="text-xs text-text-faint">
+                Runs in your browser, one game at a time — leave the tab open; progress is
+                saved per move, so stopping loses nothing.
+              </p>
+            </>
+          )}
+        </div>
+      )}
       <div className="mt-6">
         {!games && <p className="text-sm text-text-faint">{error ?? "Loading…"}</p>}
         {games && games.length === 0 && (
