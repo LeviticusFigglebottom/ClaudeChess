@@ -107,6 +107,8 @@ export async function GET(
         clockMsRemaining: row.clockMsRemaining,
         timeSpentMs: row.timeSpentMs,
         isCritical: row.isCritical,
+        degraded: row.degraded,
+        degradedDepth: row.degraded ? row.analyzedAtDepth : null,
         tbHit: row.tbHit,
         tbWdl: row.tbWdl,
         tags: (tagsByPly.get(row.id) ?? [])

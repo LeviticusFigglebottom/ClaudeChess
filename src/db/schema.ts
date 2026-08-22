@@ -156,6 +156,33 @@ export const blunderMotifEnum = pgEnum("blunder_motif", [
   "UNCLEAR",
 ]);
 
+/**
+ * Self-hosted opening-explorer aggregate (Task 2b): (epd, ratingBand,
+ * speed, moveUci) → W/D/L game counts, built offline from a Lichess monthly
+ * PGN dump (first 16 plies, pruned below a minimum game count) and seeded
+ * from the committed dataset — §9.4 repertoire reads THIS with no external
+ * dependency; the live explorer is enrichment only. Band labels follow the
+ * EXPLORER_RATINGS ladder (a game lands in the greatest band ≤ its players'
+ * average rating), speed labels follow EXPLORER_SPEEDS — the exact contract
+ * the live API already used, so the two sources sum interchangeably.
+ */
+export const explorerAgg = pgTable(
+  "explorer_agg",
+  {
+    epd: text("epd").notNull(),
+    ratingBand: text("rating_band").notNull(),
+    speed: text("speed").notNull(),
+    moveUci: text("move_uci").notNull(),
+    white: integer("white").notNull().default(0),
+    draws: integer("draws").notNull().default(0),
+    black: integer("black").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.epd, table.ratingBand, table.speed, table.moveUci] }),
+    index("explorer_agg_epd_idx").on(table.epd),
+  ]
+);
+
 export const repertoireStatusEnum = pgEnum("repertoire_status", ["known", "learning", "unseen"]);
 
 export const postmortemVerdictEnum = pgEnum("postmortem_verdict", [
@@ -367,6 +394,16 @@ export const plies = pgTable(
     isCritical: boolean("is_critical").notNull().default(false),
 
     analyzedAtDepth: integer("analyzed_at_depth"),
+
+    /**
+     * §3.3 watchdog: the search for this ply breached its budget and
+     * completed only at reduced settings (or not at all). Degraded plies are
+     * EXCLUDED from every §9 statistic and rendered as incomplete in review
+     * — never silently wrong. analyzedAtDepth carries the depth actually
+     * reached; degradedReason records the ladder's account.
+     */
+    degraded: boolean("degraded").notNull().default(false),
+    degradedReason: text("degraded_reason"),
 
     /** Variant-specific state (check counts, pockets, ...); null for standard (A1.4). */
     variantStateJson: jsonb("variant_state_json").$type<Record<string, unknown>>(),

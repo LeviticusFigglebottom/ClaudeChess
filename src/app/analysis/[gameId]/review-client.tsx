@@ -52,6 +52,9 @@ interface PlyPayload {
   clockMsRemaining: number | null;
   timeSpentMs: number | null;
   isCritical: boolean;
+  /** §3.3 watchdog: analysis completed only at reduced settings. */
+  degraded: boolean;
+  degradedDepth: number | null;
   tbHit: boolean;
   tags: TagPayload[];
 }
@@ -611,6 +614,14 @@ function PlyDetail({ ply, variant }: { ply: PlyPayload; variant: VariantId }) {
           <span className="notation text-xs text-text-faint">(−{loss.toFixed(0)} WP)</span>
         )}
         {ply.isCritical && <span className="text-xs text-lcd">critical</span>}
+        {ply.degraded && (
+          <span
+            className="text-xs text-warn-1"
+            title="The engine search for this position exceeded its budget; the eval shown is from a reduced search and this ply is excluded from trainer statistics."
+          >
+            incomplete{ply.degradedDepth ? ` (d${ply.degradedDepth})` : ""}
+          </span>
+        )}
         {ply.tbHit && <span className="text-xs text-brilliant">tablebase</span>}
       </div>
 

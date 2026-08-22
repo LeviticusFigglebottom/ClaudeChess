@@ -7,9 +7,11 @@ import { MAX_BOOK_PLY } from "@/lib/chess/openings";
 import {
   bandsForRating,
   fetchExplorerPosition,
+  // (live client — enrichment only; the aggregate below is the primary source)
   type ExplorerMove,
   type ExplorerPosition,
 } from "@/lib/explorer";
+import { fetchAggregatePosition } from "@/lib/explorer/local";
 import { userRatingHint } from "./calibration";
 
 /**
@@ -51,6 +53,22 @@ interface Frontier {
   depth: number;
 }
 
+/**
+ * §9.4 explorer read, LOCAL FIRST (Task 2b): the self-hosted aggregate is
+ * the primary source — no external dependency; the live explorer is
+ * enrichment for positions past the aggregate's pruned book, and its
+ * failures surface only when the aggregate had nothing either.
+ */
+async function explorerPositionLocalFirst(
+  db: Db,
+  fen: string,
+  opts: { speeds: string[]; ratings: string[] }
+): Promise<{ position: ExplorerPosition }> {
+  const local = await fetchAggregatePosition(db, fen, opts);
+  if (local) return { position: local };
+  return fetchExplorerPosition(db, fen, opts);
+}
+
 export interface BuildResult {
   fetched: number;
   nodesUpserted: number;
@@ -90,7 +108,7 @@ export async function buildRepertoireTree(
     let position: ExplorerPosition;
     try {
       position = (
-        await fetchExplorerPosition(db, START_FEN, { speeds, ratings: ratingBand.split("+") })
+        await explorerPositionLocalFirst(db, START_FEN, { speeds, ratings: ratingBand.split("+") })
       ).position;
       fetched++;
     } catch (error) {
@@ -120,7 +138,7 @@ export async function buildRepertoireTree(
 
     let position: ExplorerPosition;
     try {
-      const result = await fetchExplorerPosition(db, node.fen, {
+      const result = await explorerPositionLocalFirst(db, node.fen, {
         speeds,
         ratings: ratingBand.split("+"),
       });
@@ -196,7 +214,7 @@ export async function buildRepertoireTree(
         continue;
       }
       try {
-        const reply = await fetchExplorerPosition(db, resultingFen, {
+        const reply = await explorerPositionLocalFirst(db, resultingFen, {
           speeds,
           ratings: ratingBand.split("+"),
         });
@@ -377,6 +395,7 @@ export async function computeLeaks(
     .where(
       and(
         eq(games.userId, userId),
+        eq(plies.degraded, false),
         eq(games.variant, "standard"),
         eq(games.userColor, color),
         eq(plies.color, color),
@@ -411,7 +430,7 @@ export async function computeLeaks(
     const fen = bucket.fen;
     let position: ExplorerPosition;
     try {
-      position = (await fetchExplorerPosition(db, fen, { speeds, ratings: ratingBand.split("+") }))
+      position = (await explorerPositionLocalFirst(db, fen, { speeds, ratings: ratingBand.split("+") }))
         .position;
       fetches++;
     } catch {

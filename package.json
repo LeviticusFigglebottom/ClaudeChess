@@ -16,7 +16,9 @@
     "db:verify": "node scripts/verify-migrations.mjs",
     "openings:build": "node scripts/build-openings.mjs",
     "db:seed:openings": "node scripts/seed-openings.mjs",
-    "db:seed:puzzles": "node scripts/seed-puzzles.mjs"
+    "db:seed:puzzles": "node scripts/seed-puzzles.mjs",
+    "db:seed:explorer": "node scripts/seed-explorer-agg.mjs",
+    "explorer:build": "tsx scripts/build-explorer-agg.mts"
   },
   "dependencies": {
     "@fontsource/inter-tight": "^5.3.0",

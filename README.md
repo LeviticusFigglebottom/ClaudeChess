@@ -217,6 +217,29 @@ An unnamed error is still a real error; the fingerprint now treats it as a diagn
 
 Machine-verified: `gate-phase5.mts` now asserts all three (headline ratio sane, subdivision partitions the count exactly, every UNCLEAR row carries bestPv) — **18/18 Phase 5 checks pass**. With this, Phase 5 is complete; the only outstanding thread is the calibration finals merging in from the dedicated sessions.
 
+## §3.3 engine watchdog — one wedged position can no longer hang an import
+
+Carried over from the calibration session's production defect (one depth-18 MultiPV search spinning **2.5 hours at 100% CPU**). The batch pipeline ran the same engine with a `stop`-and-wait that a wedged search simply ignores — and the old hard-coded 20s soft-stop turned out to sit BELOW d24's median-to-tail range, so verify-pass searches were being **silently truncated and recorded at full depth** (a pre-existing measurement defect the fitting exposed).
+
+Now: every pool search runs under a hard wall-clock watchdog with budgets **fitted from measured p99** (`scripts/fit-search-budgets.mts`, 320 gate-dataset positions, serial, 4-core dev container; budget = ceil(p99 × 3)):
+
+| depth:multipv | n | p50 | p95 | p99 | → budget |
+|---|---|---|---|---|---|
+| 18:3 (review) | 120 | 1795ms | 3429ms | 4839ms | **15s** |
+| 16:1 (final-ply) | 120 | 201ms | 507ms | 760ms | **3s** |
+| 24:3 (verify) | 40 | 15.1s | 42.4s | 42.8s | **129s** |
+| 24:5 (deep dive) | 40 | 23.9s | 73.9s | 110.1s | **331s** |
+
+Breach → `stop`; `stop` ignored past a 2s grace → the child is **killed** and the pool replaces it. Ladder: full shape → MultiPV 1 → depth−6; final failure marks the ply **degraded** (depth actually reached in `analyzedAtDepth`, reason recorded) and the batch continues — never hangs. Degraded plies are excluded from every §9 statistic (no motif tags, filtered from calibration/tempo/postmortem/repertoire reads) and render as "incomplete (d*n*)" in review. A worker soft-breaching three times in a session is retired. Synthetic-hang coverage: `src/lib/engine/watchdog.test.ts` — mock UCI children that wedge, honor stop late, or behave; 7 tests including the never-hangs ladder bound and the three-breach retirement.
+
+## Opening explorer restored — client-direct + self-hosted aggregate
+
+**(2a) Client-side path, measured on the deployment first:** from the deployed page, `crossOriginIsolated === true` AND a CORS fetch to `tablebase.lichess.ovh` returns 200 under the existing COEP require-corp — the COEP layer does NOT block these fetches, so **no COEP change was needed** (credentialless never came into play; isolation untouched). The explorer fetch itself works mechanically from the browser — it returns a *readable* 401 from this datacenter egress, which a residential browser IP will not share (that leg is unverifiable from a datacenter by construction). The interactive panels now fetch `explorer.lichess.ovh` **client-first** (`src/lib/explorer/shape.ts`) with the server proxy as fallback — on residential connections the explorer simply works again; anywhere it doesn't, behavior is exactly what it was.
+
+**(2b) Self-hosted aggregate for §9.4** (`explorer_agg`, migration 0015): built offline from the **Lichess 2014-07 dump — 1,048,440 games seen, 933,849 used, 15.5M plies, 7.33M distinct (epd, band, speed, move) keys**. First 16 plies; band = EXPLORER_RATINGS floor of the players' average; speeds from TimeControl by Lichess's base+40×inc rule. Prune threshold measured, not guessed: ≥3 → 476,728 rows · ≥5 → 232,139 · **≥10 → 99,147 (chosen)** · ≥20 → 44,637 · ≥50 → 16,247. Committed dataset `src/db/seed/explorer-agg.jsonl.gz` = **1.36MB**; seeded table ≈ **25MB with index** — ~20× headroom inside Supabase's 500MB free tier. Idempotent seed runs in migrate-deploy (hermetic — the build environment never sees the dump). §9.4 repertoire and §9.1 empirical now read **local-first** with the live explorer as enrichment only: the Phase 5 gate passes **18/18 with no `EXPLORER_BASE_URL`, no mock, and no external egress** — the EV tree (19 nodes from 21 positions), leak cross-reference, and empirical score all served from the aggregate.
+
+**(P.S.) Same-square bot move report — verified impossible, one adjacent hole fixed.** The facade rejects `from==to` in every position tested (move application, history, SAN; castling normalizes to `e1g1`-form), and the bot path applies moves only through `moveUci`, which returns null on anything illegal — a same-square move cannot be applied, recorded, or rendered in the move list. Likeliest explanations for the sighting: castling's two-piece animation or a transient board-render artifact (visual only). The audit did find a real adjacent defect: an illegal bot choice **threw inside an async callback** — unhandled rejection, bot frozen mid-game with no feedback. Now it recovers visibly (engine pv1 → any legal move, with a console error) — a dead game is no longer possible from an engine glitch.
+
 ## What remains
 
 Phase 1's bot-calibration gate (±75 Elo, ≥200 games/band — the gate not to skip) closes in the dedicated calibration sessions; until it does, bots log `bot running UNCALIBRATED params` (theirs, not a defect). From the deployment pass: gate (d)'s live-key half (usage metering vs real token counts, `(motifChain, evidenceHash)` cache hits on real calls) stays **deferred until an `ANTHROPIC_API_KEY` is provisioned** — degraded mode is verified; gate (b)'s emailed-confirmation leg needs Supabase's "Secure email change" toggled off (and a mailbox to fully exercise delivery); `explorer.lichess.ovh` remains provider-blocked from cloud egress. Last: crazyhouse if a drop-capable board ever justifies it (B1.1).

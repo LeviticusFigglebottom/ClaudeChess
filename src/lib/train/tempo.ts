@@ -87,6 +87,7 @@ export async function tempoReport(
     .where(
       and(
         eq(games.userId, userId),
+        eq(plies.degraded, false),
         eq(games.variant, variant),
         isNotNull(plies.timeSpentMs),
         isNotNull(plies.wpLoss)
@@ -165,6 +166,7 @@ export async function nextRecognitionPosition(
     .where(
       and(
         eq(games.userId, userId),
+        eq(plies.degraded, false),
         eq(games.variant, variant),
         isNotNull(plies.wpBefore),
         eq(plies.isCritical, wantCritical),

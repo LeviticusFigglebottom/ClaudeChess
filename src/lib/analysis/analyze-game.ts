@@ -19,6 +19,7 @@ import {
 import type { EngineInfo } from "@/lib/engine/types";
 import type { ServerAnalyzeResult } from "@/lib/engine/server";
 import type { AnalysisPool } from "./pool";
+import { searchWithWatchdog } from "./watchdog";
 import { wpFromWdl, type TablebaseClient, type TbResult } from "./tablebase";
 
 /**
@@ -66,6 +67,8 @@ interface PositionEval {
   whitePov: WhitePovEval;
   tb: TbResult | null;
   terminal: "checkmate" | "stalemate" | "draw" | "variant-end" | null;
+  /** §3.3 watchdog verdict: non-null when the search only completed degraded. */
+  degraded: { reason: string; reachedDepth: number } | null;
 }
 
 function fenColor(fen: string): "w" | "b" {
@@ -90,6 +93,7 @@ function terminalEval(fen: string, variant: VariantId): PositionEval | null {
       whitePov: { cp: null, mateIn: outcome === "white" ? 1 : -1 },
       tb: null,
       terminal: position.isCheckmate() ? "checkmate" : "variant-end",
+      degraded: null,
     };
   }
   if (outcome === "draw" || position.isStalemate() || position.isInsufficientMaterial()) {
@@ -99,6 +103,7 @@ function terminalEval(fen: string, variant: VariantId): PositionEval | null {
       whitePov: { cp: 0, mateIn: null },
       tb: null,
       terminal: position.isStalemate() ? "stalemate" : "draw",
+      degraded: null,
     };
   }
   return null;
@@ -117,19 +122,33 @@ async function evaluatePosition(
   if (terminal) return terminal;
 
   const tb = variant === "standard" ? await opts.tb.probe(fen) : null;
-  const result: ServerAnalyzeResult = await opts.pool.withEngine(variant, (engine) =>
-    engine.analyze(startFen, movesUci, { depth, multipv, maxMs: 20_000 })
-  );
+  // §3.3 watchdog: fitted per-shape budget, kill-and-retry ladder, never
+  // hangs — one pathological position can no longer wedge a whole import.
+  const { result, degraded } = await searchWithWatchdog(opts.pool, variant, startFen, movesUci, {
+    depth,
+    multipv,
+  });
+  const degradedInfo = degraded
+    ? { reason: degraded.reason, reachedDepth: degraded.reachedDepth }
+    : null;
   const pv1 = result.infos[0];
   if (!pv1) {
-    // Engine produced no line (should not happen off-terminal) — draw-ish fallback.
-    return { infos: [], wpMover: 50, whitePov: { cp: 0, mateIn: null }, tb, terminal: null };
+    // No line at all — a fully failed search is a degraded ply, not a fake
+    // draw eval that silently corrupts every trainer downstream.
+    return {
+      infos: [],
+      wpMover: 50,
+      whitePov: { cp: 0, mateIn: null },
+      tb,
+      terminal: null,
+      degraded: degradedInfo ?? { reason: "engine produced no line", reachedDepth: 0 },
+    };
   }
   const mover = fenColor(fen);
   const whitePov = normalizeInfo(pv1, mover);
   const wpMover =
     tb !== null ? wpFromWdl(tb.wdl) : winProbFromEval(forColor(whitePov, mover));
-  return { infos: result.infos, wpMover, whitePov, tb, terminal: null };
+  return { infos: result.infos, wpMover, whitePov, tb, terminal: null, degraded: degradedInfo };
 }
 
 /** Sum of capturable material on distinct target squares (§9.3 criterion c). */
@@ -396,7 +415,19 @@ async function writePlyRecord(
       wpLoss: loss,
       classification,
       isCritical: onlyMoveish || capturesHot,
-      analyzedAtDepth: depth,
+      // Watchdog (§3.3): a ply is degraded when EITHER side of it only
+      // completed at reduced settings; analyzedAtDepth records the depth
+      // actually reached, not the one requested.
+      degraded: before.degraded !== null || after.degraded !== null,
+      degradedReason:
+        [before.degraded?.reason, after.degraded?.reason].filter(Boolean).join(" | ") || null,
+      analyzedAtDepth:
+        before.degraded !== null || after.degraded !== null
+          ? Math.min(
+              before.degraded?.reachedDepth ?? depth,
+              after.degraded?.reachedDepth ?? depth
+            )
+          : depth,
       tbWdl: after.tb?.wdl ?? null,
       tbDtz: after.tb?.dtz ?? null,
       tbHit: after.tb !== null,
