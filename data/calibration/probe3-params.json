@@ -1,0 +1,10 @@
+{
+  "bands": {
+    "2000": {
+      "pBlunder": 0.16,
+      "temperature": 3.1,
+      "formulaEquivalent": 1470,
+      "note": "bisection: r*=1408 measured 1870±155 (pass region), r*=1531 blew out 19/20 vs SF@2000; curve is flatter below r=1600 than the edge-slope extrapolation assumed"
+    }
+  }
+}
