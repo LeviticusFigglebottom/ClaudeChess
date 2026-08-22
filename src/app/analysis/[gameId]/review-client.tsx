@@ -357,7 +357,16 @@ export function ReviewClient({ gameId }: { gameId: string }) {
         )}
       </header>
 
-      {(!reviewComplete || analyzing) && (
+      {reviewComplete && analyzing && (
+        // The review is COMPLETE at depth 18 — the d24 borderline refinement
+        // and motif derivation continue quietly; nobody should wait on them.
+        <p className="notation mb-4 text-xs text-text-faint">
+          {clientPhase?.phase === "pass3"
+            ? `refining ${clientPhase.total} borderline ${clientPhase.total === 1 ? "eval" : "evals"} in the background (${clientPhase.done}/${clientPhase.total})…`
+            : "refining borderline evals and deriving motifs in the background…"}
+        </p>
+      )}
+      {!reviewComplete && (
         <div className="card mb-4 flex items-center gap-3 p-3">
           <button
             onClick={() => void analyze()}

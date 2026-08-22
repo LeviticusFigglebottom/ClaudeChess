@@ -64,6 +64,8 @@ export interface IngestResult {
   provisionalRemaining: number;
   /** Plies still awaiting the d24 verify pass after this batch. */
   verifyRemaining: number;
+  /** Verify candidates whose neighbours are analyzed — safe to verify NOW. */
+  verifyReadyPlies: number[];
 }
 
 const ALLOWED_DEPTHS = new Set<number>([
@@ -206,6 +208,25 @@ export async function ingestPositionEvals(
         skipped++;
         continue;
       }
+      // Neighbour guard: applyVerifyPair refreshes the adjacent plies and
+      // shares its two positions' evals with them. With the CONCURRENT
+      // verify pipeline a pair can arrive while pass 2 is still writing the
+      // frontier — an unanalyzed neighbour would take a NaN loss, and a
+      // still-provisional (d12) neighbour would later be rewritten at d18,
+      // SPLITTING the one-eval-per-position chain (target.after at d24 vs
+      // neighbour.before at d18). Neighbours at review depth are final for
+      // the sweep (the downgrade guard skips them), so require that. Defer
+      // otherwise — the candidate re-lists on a later flush.
+      const prevRow = rows[row.ply - 2];
+      const nextRow = rows[row.ply];
+      const neighbourReady = (neighbour: (typeof rows)[number] | undefined) =>
+        !neighbour ||
+        neighbour.degraded ||
+        (neighbour.analyzedAtDepth ?? 0) >= ANALYSIS_SETTINGS.review.depth;
+      if (!neighbourReady(prevRow) || !neighbourReady(nextRow)) {
+        skipped++;
+        continue;
+      }
       await applyVerifyPair(db, gameId, rows, row, before.pe, after.pe);
       verified++;
       continue;
@@ -231,10 +252,13 @@ export async function ingestPositionEvals(
 
   const fresh = await db
     .select({
+      ply: plies.ply,
       analyzedAtDepth: plies.analyzedAtDepth,
       degraded: plies.degraded,
       classification: plies.classification,
       wpLoss: plies.wpLoss,
+      wpBefore: plies.wpBefore,
+      wpAfter: plies.wpAfter,
     })
     .from(plies)
     .where(eq(plies.gameId, gameId));
@@ -242,7 +266,17 @@ export async function ingestPositionEvals(
     (row) =>
       !row.degraded && (row.analyzedAtDepth ?? 0) < ANALYSIS_SETTINGS.review.depth
   ).length;
-  const verifyRemaining = fresh.filter((row) => needsVerify(row)).length;
+  const ordered = [...fresh].sort((a, b) => a.ply - b.ply);
+  const candidates = ordered.filter((row, i) => {
+    if (!needsVerify(row)) return false;
+    // Ready = both neighbours at review depth (final for the sweep), so a
+    // concurrent verify can never split the one-eval-per-position chain.
+    const ready = (neighbour: (typeof ordered)[number] | undefined) =>
+      !neighbour ||
+      neighbour.degraded ||
+      (neighbour.analyzedAtDepth ?? 0) >= ANALYSIS_SETTINGS.review.depth;
+    return ready(ordered[i - 1]) && ready(ordered[i + 1]);
+  });
 
   return {
     written,
@@ -251,6 +285,7 @@ export async function ingestPositionEvals(
     invalid,
     totalPlies: total,
     provisionalRemaining,
-    verifyRemaining,
+    verifyRemaining: fresh.filter((row) => needsVerify(row)).length,
+    verifyReadyPlies: candidates.map((row) => row.ply),
   };
 }
