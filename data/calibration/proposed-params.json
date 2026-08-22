@@ -81,9 +81,10 @@
       "extrapolated": false
     },
     "1200": {
-      "pBlunder": 0.2907882365474972,
-      "temperature": 4.407882365474972,
-      "formulaEquivalent": 1078,
+      "pBlunder": 0.323,
+      "temperature": 4.733,
+      "formulaEquivalent": 980,
+      "note": "1200 checkpoint blowout at 31g: curve r*=1078 measured 1354+/-123 (nominal 154 outside). The d14 curve nodes carry +/-155-190 CIs — inversion error was always ~+/-100. Drop 154 at measured d14 slope 1.2-2.0 -> r*=980, predicted 1158-1236.",
       "segment": "d14",
       "extrapolated": false
     },
