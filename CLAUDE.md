@@ -35,6 +35,7 @@ npx tsx scripts/calibrate-fit.mts --propose|--finalize   # fit → bot-calibrati
 9. **Glicko-2 updates are batched per rating period** (12 games / 7 days), never per game (spec §7).
 10. **Rating pools never blend** (Phase 2): GAMBIT's Glicko lives on the Stockfish UCI_Elo scale (that's what the bots are calibrated against); imported chess.com and Lichess ratings are two *other* pools. Any UI showing more than one labels each with its pool — never average, compare, or convert between them.
 10. **Engine binaries are vendored** (`public/engine/`, committed). No build or install step may fetch them (A0.1). GPL notices: `NOTICE` + `/licenses` — update both when engine or rules deps change.
+11. **Calibration fit invariant (from the 2000-band blowout):** the measured-strength curve is only invertible within a shared search *shape*, and shape means **truth depth AND MultiPV together** — MultiPV varies per band (§6a), so cross-band inversion inside a depth segment is still cross-shape. Cross-band fits produce first proposals only; every band's params must pass its own-shape 20-game checkpoint (nominal inside the 95% CI) before finals count. **No interpolation anywhere in d18 — option (c) is closed permanently.** Also: SF18-Lite's UCI_Elo **1400 label is defective at 400ms** (~160 Elo weak, three-way corroborated — `data/calibration/ruler-checks.txt`); never anchor on SF@1400 — band 1400 anchors on SF@1320.
 
 ## Layout facts
 
