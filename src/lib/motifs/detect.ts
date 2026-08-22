@@ -364,15 +364,26 @@ function missedBackRankMate(ctx: Ctx): MotifDetection | null {
 }
 
 /**
- * The move walks into a FORCED mate (the stored refutation line ends in
- * checkmate of the mover) — mate-class evidence regardless of whether the
- * king-zone attacker count moved. Back-rank geometry outranks this when it
- * also fires (higher confidence, same class).
+ * The move walks into a FORCED mate whose line lands on the mover's king
+ * zone — mate-class evidence for KING_SAFETY_COLLAPSE even when the
+ * attacker COUNT didn't rise (the attackers were already parked there).
+ * C2.3's "mate alone is not a motif" is respected: a mate that never
+ * touches the zone falls through to whatever else fires.
  */
 function mateAllowed(ctx: Ctx): MotifDetection | null {
   if (!ctx.finalIsMate) return null;
   if ((ctx.finalPos.turn === "w" ? "white" : "black") !== ctx.mover) return null;
   if (ctx.refutationSteps.length === 0) return null;
+  const zone = kingZone(ctx.after, ctx.mover);
+  const zoneHits = ctx.refutationSteps.filter((step) => {
+    if (step.mover === ctx.mover) return false;
+    try {
+      return zone.has(uciSquares(step.uci).to);
+    } catch {
+      return false;
+    }
+  }).length;
+  if (zoneHits === 0) return null;
   return {
     motif: "KING_SAFETY_COLLAPSE",
     confidence: 0.85,
@@ -381,6 +392,7 @@ function mateAllowed(ctx: Ctx): MotifDetection | null {
     evidence: {
       forcedMate: true,
       mateInPlies: ctx.refutationSteps.length,
+      zoneHits,
     },
   };
 }
@@ -769,6 +781,39 @@ function openingKingWalk(ctx: Ctx): MotifDetection | null {
   };
 }
 
+/**
+ * KING_SAFETY heuristic, the other direction the UNCLEAR sample showed:
+ * castling was available AND the engine's best move, the played move did
+ * something else with the king still in the center, and it cost a
+ * blunder-sized swing.
+ */
+function failedToCastle(ctx: Ctx): MotifDetection | null {
+  const { input } = ctx;
+  if (input.wpLoss < 15) return null;
+  const best = input.bestPv[0];
+  if (!best || best === input.movedUci) return null;
+  let bestSan: string | null = null;
+  try {
+    const probe = GamePosition.fromFen(input.fenBefore, ctx.variant);
+    const applied = probe.moveUci(best);
+    bestSan = applied?.san ?? null;
+  } catch {
+    return null;
+  }
+  if (!bestSan || !bestSan.startsWith("O-O")) return null;
+  if (input.movedSan.startsWith("O-O")) return null;
+  return {
+    motif: "KING_SAFETY_COLLAPSE",
+    confidence: 0.6,
+    evidenceClass: 1,
+    stakeCp: 300,
+    evidence: {
+      failedToCastle: true,
+      bestWasCastling: bestSan,
+    },
+  };
+}
+
 function kingSafetyCollapse(ctx: Ctx): MotifDetection | null {
   const beforeAttackers = kingZoneAttackers(ctx.before, ctx.mover);
   const afterAttackers = kingZoneAttackers(ctx.after, ctx.mover);
@@ -971,6 +1016,7 @@ export function detectMotifs(input: MotifDetectionInput): MotifDetection[] {
   push(trappedPiece(ctx));
   push(kingSafetyCollapse(ctx));
   push(openingKingWalk(ctx));
+  push(failedToCastle(ctx));
   push(pawnStructureCollapse(ctx));
   push(zwischenzugMissed(ctx));
   push(prematureAttack(ctx));

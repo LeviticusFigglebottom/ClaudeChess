@@ -420,8 +420,13 @@ async function writePlyRecord(
  */
 export const VERIFY_RULES = {
   depth: 24,
-  /** Loss window around the 10 (MISTAKE) and 15 (BLUNDER) boundaries. */
-  lossMin: 8,
+  /**
+   * Loss window around the 10 (MISTAKE) and 15 (BLUNDER) boundaries.
+   * Reaches down to 5 so the INACCURACY band feeding the mistake boundary
+   * is refined too — d18's small systematic softness parks real mistakes
+   * at loss 6–9 the same way it parked blunders at 12–15.
+   */
+  lossMin: 5,
   lossMax: 18,
 } as const;
 
