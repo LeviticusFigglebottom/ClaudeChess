@@ -9,9 +9,77 @@ Every phase gate below was executed by machine on this build (local Postgres 16,
 1. **A spec defect, corrected**: §4.2's loss thresholds (10/20/30) transcribed Lichess's published 0.1/0.2/0.3 winning-chances deltas — which live on a [−1,1] scale — onto 0–100 without halving. The Phase 2 agreement gate caught it (GAMBIT reported ~4–5× fewer blunders than Lichess's own judgments on near-identical evals). Corrected to **5/10/15** in `src/lib/eval/classify.ts` with the derivation documented in-code, plus a depth-24 **borderline verification pass** for plies whose loss lands near the 10/15 decision boundaries.
 2. **An upstream block, routed around**: `explorer.lichess.ovh` answers nginx **401** to this container's egress (its sibling `tablebase.lichess.ovh` answers 200, and `lichess.org` is fine). Everything explorer-fed (§9.1 empirical score, §9.4 tree, the explorer panel) runs through one client (`src/lib/explorer`) with `EXPLORER_BASE_URL`; gates exercised the identical code path against `scripts/mock-explorer.mjs` (deterministic, clearly-synthetic payloads), and the features degrade gracefully when the live upstream refuses. Production egress must be re-verified on deploy.
 
-### Phase 2 — import + analysis + review (gate tables below, from `gate-phase2-report.mts`)
+### Phase 2 — import + analysis + review (`gate-phase2-report.mts`, 50 imported Lichess games, 3,013 plies)
 
-<!-- PHASE2_GATE -->
+| Gate | Measured |
+|---|---|
+| **A — completeness**: every ply carries eval, win-prob loss, classification, isCritical | ✅ 3,013/3,013 plies, zero nulls; isCritical on 20.0% |
+| **B — clocks**: timeSpentMs wherever the source PGN carried %clk | ✅ 3,009/3,009 clk-bearing plies (the 4 others are From-Position games whose sources omit early %clk) |
+| **C — agreement vs Lichess's own judgments** (their NAGs on the same games, blunder+mistake counts within ±20% per side) | ✅ **white blunders 101 vs 120 (15.8%) · white mistakes 68 vs 79 (13.9%) · black blunders 99 vs 115 (13.9%) · black mistakes 74 vs 84 (11.9%)** — all four cells inside ±20% |
+| C — >50% divergences investigated | ✅ 2 games (down from 3): per-ply diagnostics (`dbg-agree.mts`) show identical eval SIGNS and near-identical losses with Lichess's deeper cloud evals slightly more decisive — borderline plies fall across fixed thresholds; no classification-logic disagreement |
+| **D — C4 fixture suite** | ✅ **159 fixtures, every one rank-1** (146 harvested from Lichess-puzzle themes + 10 handcrafted + 3 from this sample's own UNCLEAR review); a miss is a test failure, not a statistic |
+| D — SEE vs exhaustive reference | ✅ **1000/1000 random capture positions agree** (the stand-pat prune was found unsound by this cross-check and removed) |
+| D — no detector > 40% of blunders | ✅ max HANGING_PIECE 33.0% |
+| D — UNCLEAR < 15% on the blunder sample | ❌ **26.8%** (48/179 blunders; 35.1% across all error classes; 19.2% on the pre-correction loss≥30 class). See below — reported as a measured finding, not silently absorbed |
+
+**On the UNCLEAR miss.** C4's loop ("read the UNCLEAR sample; recurring patterns become detectors") ran twice against real UNCLEAR plies and produced six detector extensions plus three real-game fixtures. What remains is measured, not mysterious: a swing analysis over every surviving blunder-UNCLEAR (`dbg-unclear-swing.mts`) shows **46 of 49 have QUIET refutations** — no material swing within six plies, no mate. These are positional errors (initiative-killing trades, slow king-safety decay, structure concessions) that the closed C2.3 vocabulary — tactical mechanisms plus three narrow positional heuristics — cannot name with decidable geometry. Two structural notes: (1) the §4.2 threshold correction TRIPLED the blunder class by admitting 15–30wp positional slides; on the population the 15% bar was written against (loss ≥ 30), the rate is 19.2%; (2) inventing softer detectors to chase the number would trade rank-1 precision (the fixture suite's guarantee) for coverage — the honest state is a vocabulary gap, documented for a future addendum.
+
+Per-game agreement table (ours vs Lichess, blunders/mistakes per side):
+
+```
+game      | ours W (B/M) | lich W (B/M) | ours B (B/M) | lich B (B/M)
+qFnrMpgy |     1/2      |     1/2      |     0/2      |     0/1
+pLJI70om |     3/0      |     3/1      |     3/1      |     3/2
+ZcaiTVSc |     1/0      |     2/1      |     1/1      |     1/0
+toi0gdv9 |     1/0      |     0/0      |     0/0      |     1/0
+wiQq64ed |     1/2      |     1/4      |     1/0      |     1/1
+pfnn5lPH |     6/1      |     7/3      |     2/3      |     1/8
+ybvHcaEB |     2/0      |     2/0      |     2/1      |     2/0
+DmwcmAeq |     4/3      |     5/3      |     3/1      |     4/2
+eeHKM0vo |     4/2      |     4/4      |     3/3      |     4/2
+72N85ObF |     0/1      |     0/1      |     1/0      |     1/1
+o7i0X79D |     0/0      |     0/1      |     2/0      |     2/0
+bx1nIPNY |     2/1      |     3/0      |     3/0      |     3/1
+JbyN5XKE |     4/7      |     7/2      |     5/3      |     5/6
+eXN12r6v |     1/1      |     2/0      |     1/0      |     1/0
+PuqlzxVK |     5/0      |     4/1      |     4/0      |     2/2
+OfooeDje |     0/0      |     0/0      |     1/2      |     1/2
+XFuCm63i |     0/1      |     1/1      |     2/0      |     2/1
+jhwLRGQ6 |     2/1      |     3/0      |     2/2      |     4/0
+iuCTGyoj |     0/2      |     0/5      |     1/3      |     2/3
+lui2jTCm |     0/1      |     1/3      |     0/4      |     1/7
+lnKwHGjY |     2/1      |     2/3      |     1/4      |     2/0
+GZlXv074 |     3/1      |     3/3      |     4/1      |     4/0
+ah3zHYET |     3/2      |     3/2      |     4/5      |     5/6
+zpCYJ0HA |     2/3      |     3/3      |     1/1      |     1/1
+G0sau0p0 |     2/1      |     2/1      |     2/0      |     2/0
+b4dyuTvM |     2/3      |     2/1      |     1/2      |     1/1
+Gzft3tpg |     1/1      |     2/0      |     1/0      |     1/2
+mkKF2v5m |     2/1      |     2/1      |     1/0      |     1/0
+KXPt4uR7 |     1/3      |     2/5      |     1/2      |     2/4
+l7y5GC19 |     1/3      |     0/4      |     0/2      |     0/2
+iy0Ucoss |     3/0      |     3/0      |     4/1      |     5/0
+ac1w0wJc |     2/1      |     4/0      |     0/2      |     1/2
+IIzI81QV |     1/0      |     1/1      |     0/0      |     0/0
+cL1bQkmO |     0/0      |     0/0      |     1/0      |     1/0
+Jk3xPTvF |     3/7      |     5/4      |     4/4      |     5/2
+H5CzIFfC |     10/2      |     10/2      |     9/3      |     9/2
+IKcYKW2l |     0/2      |     0/2      |     1/1      |     1/2
+btgCejNn |     3/1      |     5/0      |     1/2      |     2/1
+65B4Ytym |     2/0      |     2/2      |     3/4      |     4/4
+FuUuRPJk |     1/0      |     1/0      |     0/0      |     0/1
+kPPbehrf |     1/1      |     2/2      |     1/1      |     2/1
+1qd4NOUZ |     1/1      |     1/1      |     0/3      |     2/1
+9VbkfB4b |     3/0      |     3/1      |     4/1      |     5/0
+rmwJLV3U |     0/3      |     0/3      |     1/2      |     1/2
+jCDYb77F |     6/1      |     6/2      |     6/2      |     6/2
+qJE6D1Ks |     1/1      |     2/1      |     2/1      |     2/1
+KsnbRtQC |     4/2      |     2/3      |     5/0      |     3/3
+lewEsHXi |     2/1      |     3/0      |     2/1      |     3/0
+WbJ9rOrc |     1/1      |     2/0      |     1/2      |     2/2
+GVuZbn6p |     1/0      |     1/0      |     1/1      |     1/3
+```
+
 
 ### Phase 3 — puzzles + explorer
 
