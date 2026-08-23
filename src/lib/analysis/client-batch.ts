@@ -80,6 +80,38 @@ const PASS_TIMEOUT_MS: Record<number, number> = { 12: 12_000, 18: 45_000, 24: 12
 /** Concurrent verifier only when a second engine won't starve the sweep. */
 const PIPELINE_MIN_CORES = 6;
 
+/**
+ * Sweep-engine lease: the runner passes one of these so consecutive queued
+ * games REUSE the booted engine (boot + first-search warmup costs seconds
+ * per game; a 50-game Analyze-all used to pay it 50 times). Keyed by
+ * variant + thread count — a mismatch quits and reboots (UCI_Chess960 is an
+ * engine-instance option, B0.2). The lease owner quits the engine when its
+ * queue drains.
+ */
+export interface EngineLease {
+  sweep: ReturnType<typeof createEngine> | null;
+  variant: VariantId | null;
+  threads: number;
+}
+
+export function newEngineLease(): EngineLease {
+  return { sweep: null, variant: null, threads: 0 };
+}
+
+export function releaseEngineLease(lease: EngineLease): void {
+  lease.sweep?.quit();
+  lease.sweep = null;
+  lease.variant = null;
+  lease.threads = 0;
+}
+
+export interface ClientBatchOpts {
+  /** Run the d24 borderline verification tail (default false — BASIC). */
+  full?: boolean;
+  /** Reuse/keep the sweep engine across calls (see EngineLease). */
+  engines?: EngineLease;
+}
+
 async function fetchRows(gameId: string): Promise<DriverPayload> {
   const response = await fetch(`/api/games/${gameId}`);
   const body = (await response.json()) as DriverPayload & { error?: { message: string } };
@@ -104,8 +136,10 @@ export async function runClientBatchAnalysis(
   gameId: string,
   onProgress: (progress: BatchProgress) => void,
   onPassComplete: (pass: 1 | 2 | 3) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  batchOpts: ClientBatchOpts = {}
 ): Promise<{ ok: boolean; error?: string }> {
+  const full = batchOpts.full === true;
   onProgress({ phase: "boot", done: 0, total: 1 });
   let payload = await fetchRows(gameId);
   const variant = payload.game.variant as VariantId;
@@ -120,7 +154,7 @@ export async function runClientBatchAnalysis(
   // tab does nothing else during batch analysis. With the concurrent
   // verifier the budget splits between the two instances.
   const cores = navigator.hardwareConcurrency ?? 2;
-  const pipelined = cores >= PIPELINE_MIN_CORES;
+  const pipelined = full && cores >= PIPELINE_MIN_CORES;
   const sweepThreads = pipelined
     ? Math.max(2, Math.min(cores - 3, 6))
     : Math.max(1, Math.min(cores - 1, 8));
@@ -137,9 +171,16 @@ export async function runClientBatchAnalysis(
     return engine;
   };
 
+  const lease = batchOpts.engines;
   let sweepEngine: ReturnType<typeof createEngine>;
   try {
-    sweepEngine = await bootEngine(sweepThreads);
+    if (lease?.sweep && lease.variant === variant && lease.threads === sweepThreads) {
+      sweepEngine = lease.sweep; // warm reuse — no boot, hash carries over
+      lease.sweep = null; // taken; returned (or quit) in the finally below
+    } else {
+      if (lease) releaseEngineLease(lease);
+      sweepEngine = await bootEngine(sweepThreads);
+    }
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "engine boot failed" };
   }
@@ -377,30 +418,33 @@ export async function runClientBatchAnalysis(
       const verifierProblem = verifierError as Error | null;
       if (verifierProblem) console.info(`[batch] verifier degraded: ${verifierProblem.message}`);
     }
-    payload = await fetchRows(gameId);
-    rows.splice(0, rows.length, ...payload.plies);
-    const remaining = rows.filter((row) => needsVerify(row));
-    if (remaining.length > 0) {
-      let done = 0;
-      onProgress({ phase: "pass3", done, total: remaining.length });
-      for (const row of remaining) {
-        if (signal?.aborted) throw new Error("cancelled");
-        await verifyPly(sweepEngine, row.ply);
-        done++;
+    if (full) {
+      payload = await fetchRows(gameId);
+      rows.splice(0, rows.length, ...payload.plies);
+      const remaining = rows.filter((row) => needsVerify(row));
+      if (remaining.length > 0) {
+        let done = 0;
         onProgress({ phase: "pass3", done, total: remaining.length });
+        for (const row of remaining) {
+          if (signal?.aborted) throw new Error("cancelled");
+          await verifyPly(sweepEngine, row.ply);
+          done++;
+          onProgress({ phase: "pass3", done, total: remaining.length });
+        }
       }
+      onPassComplete(3);
     }
-    onPassComplete(3);
 
     // Finalize: the server completes anything skipped, runs any remaining
-    // verification, then derives motifs/volatility/fair-play. Usually one call.
+    // verification (full mode only), then derives motifs/volatility/
+    // fair-play. Usually one call.
     console.info("[batch] finalize");
     onProgress({ phase: "finalize", done: 0, total: 1 });
     for (let call = 0; call < 40; call++) {
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gameId }),
+        body: JSON.stringify({ gameId, full }),
       });
       const body = (await response.json().catch(() => null)) as {
         done?: boolean;
@@ -417,7 +461,14 @@ export async function runClientBatchAnalysis(
     return { ok: false, error: error instanceof Error ? error.message : "analysis failed" };
   } finally {
     sweepDone = true;
-    sweepEngine.quit();
+    if (lease) {
+      // Return the warm engine for the next queued game.
+      lease.sweep = sweepEngine;
+      lease.variant = variant;
+      lease.threads = sweepThreads;
+    } else {
+      sweepEngine.quit();
+    }
     verifyEngine?.quit();
   }
 }

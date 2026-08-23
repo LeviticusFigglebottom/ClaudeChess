@@ -1,7 +1,10 @@
 import {
   clientBatchCapability,
+  newEngineLease,
+  releaseEngineLease,
   runClientBatchAnalysis,
   type BatchProgress,
+  type EngineLease,
 } from "./client-batch";
 
 /**
@@ -19,6 +22,8 @@ import {
 export interface RunnerJob {
   gameId: string;
   label: string;
+  /** Full-depth (d24 borderline verification) — BASIC is the default. */
+  full?: boolean;
 }
 
 export interface RunnerCurrent extends RunnerJob {
@@ -209,6 +214,9 @@ class AnalysisRunner {
     }
   }
 
+  /** Warm sweep engine shared across the queue (quit when the loop drains). */
+  private lease: EngineLease = newEngineLease();
+
   private async runLoop(): Promise<void> {
     if (this.active) return;
     this.active = true;
@@ -233,18 +241,19 @@ class AnalysisRunner {
               this.emitGame(job.gameId, "progress");
             },
             () => this.emitGame(job.gameId, "pass"),
-            abort.signal
+            abort.signal,
+            { full: job.full === true, engines: this.lease }
           );
           if (!result.ok && !abort.signal.aborted) {
             current.note = `client analysis stopped (${result.error}) — finishing on the server`;
             current.phase = null;
             this.emit();
-            result = await this.serverAnalyze(job.gameId);
+            result = await this.serverAnalyze(job.gameId, job.full === true);
           }
         } else {
           current.note = `server analysis (${capability.reason})`;
           this.emit();
-          result = await this.serverAnalyze(job.gameId);
+          result = await this.serverAnalyze(job.gameId, job.full === true);
         }
         this.lastResult = { gameId: job.gameId, ok: result.ok, error: result.error };
         this.current = null;
@@ -258,13 +267,17 @@ class AnalysisRunner {
     } finally {
       this.active = false;
       this.abort = null;
+      releaseEngineLease(this.lease);
       this.emit();
     }
   }
 
   /** Server-side fallback: the chunked /api/analyze loop (moved intact from
    * review-client so it, too, survives navigation). */
-  private async serverAnalyze(gameId: string): Promise<{ ok: boolean; error?: string }> {
+  private async serverAnalyze(
+    gameId: string,
+    full: boolean
+  ): Promise<{ ok: boolean; error?: string }> {
     try {
       let retried = false;
       let stalled = 0;
@@ -274,7 +287,7 @@ class AnalysisRunner {
         const response = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ gameId }),
+          body: JSON.stringify({ gameId, full }),
         });
         interface ChunkPayload {
           analyzedPlies?: number;

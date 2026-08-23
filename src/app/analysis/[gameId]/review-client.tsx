@@ -14,7 +14,7 @@ import { useFlag } from "@/components/use-flag";
 import { useAnalysisRunner } from "@/components/analysis-runner";
 import type { BatchProgress } from "@/lib/analysis/client-batch";
 import { analysisRunner } from "@/lib/analysis/runner";
-import { isProvisional } from "@/lib/analysis/verify-rules";
+import { isProvisional, needsVerify } from "@/lib/analysis/verify-rules";
 import { evalLabel, explainPly } from "@/lib/eval/explain";
 import { GamePosition } from "@/lib/chess/position";
 import type { VariantId } from "@/lib/chess/variant";
@@ -217,25 +217,36 @@ export function ReviewClient({ gameId }: { gameId: string }) {
   const current = cursor > 0 ? data?.plies[cursor - 1] : null;
   const fen = current?.fenAfter ?? data?.game.startFen ?? START_FEN;
 
+  // Alternative previewed from the detail card's chips (arrow on the board).
+  const [previewUci, setPreviewUci] = useState<string | null>(null);
+  useEffect(() => setPreviewUci(null), [cursor]);
+
   // On error plies, annotate the board chess.com-style: the played move in
   // the mistake tone, the engine's line in the confident accent. Arrows are
   // drawn on the post-move board, so the best-move arrow starts from where
   // the piece STOOD — the standard review convention.
   const reviewArrows = useMemo(() => {
-    if (!current?.classification || !ERROR_CLASSES.includes(current.classification)) {
-      return undefined;
+    const arrows: { from: string; to: string; color: string }[] = [];
+    if (current?.classification && ERROR_CLASSES.includes(current.classification)) {
+      const best = current.pv1?.[0];
+      if (best && best !== current.uci) {
+        arrows.push({
+          from: current.uci.slice(0, 2),
+          to: current.uci.slice(2, 4),
+          color: "var(--warn-2)",
+        });
+        arrows.push({ from: best.slice(0, 2), to: best.slice(2, 4), color: "var(--accent)" });
+      }
     }
-    const best = current.pv1?.[0];
-    if (!best || best === current.uci) return undefined;
-    return [
-      {
-        from: current.uci.slice(0, 2),
-        to: current.uci.slice(2, 4),
-        color: "var(--warn-2)",
-      },
-      { from: best.slice(0, 2), to: best.slice(2, 4), color: "var(--accent)" },
-    ];
-  }, [current]);
+    if (previewUci) {
+      arrows.push({
+        from: previewUci.slice(0, 2),
+        to: previewUci.slice(2, 4),
+        color: "var(--brilliant)",
+      });
+    }
+    return arrows.length > 0 ? arrows : undefined;
+  }, [current, previewUci]);
 
   const whiteWp = useMemo(() => {
     if (!data) return 50;
@@ -292,6 +303,9 @@ export function ReviewClient({ gameId }: { gameId: string }) {
       (ply) => ply.degraded || (ply.analyzedAtDepth ?? 0) >= ANALYSIS_SETTINGS.review.depth
     );
   const provisionalCount = data.plies.filter((ply) => isProvisional(ply)).length;
+  // Borderline evals a deep (d24) pass would refine — the review is BASIC
+  // by default (owner directive); deep verification is the opt-in below.
+  const verifiableCount = data.plies.filter((ply) => needsVerify(ply)).length;
   const keyMoments = data.plies.filter(
     (ply) => ply.classification && KEY_CLASSES.includes(ply.classification)
   );
@@ -337,8 +351,28 @@ export function ReviewClient({ gameId }: { gameId: string }) {
         // and motif derivation continue quietly; nobody should wait on them.
         <p className="notation mb-4 text-xs text-text-faint">
           {clientPhase?.phase === "pass3"
-            ? `refining ${clientPhase.total} borderline ${clientPhase.total === 1 ? "eval" : "evals"} in the background (${clientPhase.done}/${clientPhase.total})…`
-            : "refining borderline evals and deriving motifs in the background…"}
+            ? `deep-verifying ${clientPhase.total} borderline ${clientPhase.total === 1 ? "eval" : "evals"} at depth 24 (${clientPhase.done}/${clientPhase.total})…`
+            : "refining evals and deriving motifs in the background…"}
+        </p>
+      )}
+      {reviewComplete && !analyzing && verifiableCount > 0 && (
+        // BASIC review complete (the default): full depth is the opt-in.
+        <p className="mb-4 flex flex-wrap items-center gap-2 text-xs text-text-faint">
+          <span>
+            Basic review (depth {ANALYSIS_SETTINGS.review.depth}) — {verifiableCount} borderline{" "}
+            {verifiableCount === 1 ? "eval" : "evals"} could sharpen with a deeper look.
+          </span>
+          <button
+            onClick={() => {
+              const opponent = `vs ${
+                data.game.userColor === "black" ? data.game.whiteName : data.game.blackName
+              }`;
+              analysisRunner.enqueue([{ gameId, label: opponent, full: true }], { front: true });
+            }}
+            className="rounded border border-edge px-2 py-0.5 text-text-dim hover:border-edge-strong hover:text-text"
+          >
+            Deep-verify at depth 24
+          </button>
         </p>
       )}
       {!reviewComplete && (
@@ -388,7 +422,7 @@ export function ReviewClient({ gameId }: { gameId: string }) {
             ) : (
               <p className="text-xs text-text-faint">
                 {fallbackNote ??
-                  "Full review of every position — runs in your browser where supported, with provisional results in seconds."}
+                  "Reviews every position in your browser where supported — provisional results in seconds, depth 18 throughout. Deep verification (d24) stays optional afterwards."}
               </p>
             )}
           </div>
@@ -405,90 +439,98 @@ export function ReviewClient({ gameId }: { gameId: string }) {
         </p>
       )}
 
-      <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="flex gap-2">
-          {prefs.evalBar.show && (
-            <Ribbon
-              value={(whiteWp - 50) / 50}
-              orientation="vertical"
-              className="w-3 self-stretch"
-              label={`White win probability ${whiteWp.toFixed(0)}%`}
-            />
-          )}
-          <div className="w-full max-w-[560px] flex-1">
-            <GameBoard
-              boardId={`review-${game.id}`}
-              fen={fen}
-              orientation={game.userColor}
-              lastMove={current ? { from: current.uci.slice(0, 2), to: current.uci.slice(2, 4) } : null}
-              interactive={false}
-              onMove={() => false}
-              destsFrom={() => []}
-              canSelect={() => false}
-              arrows={reviewArrows}
-            />
-            <div className="mt-2 flex items-center justify-between">
-              <div className="flex gap-1">
-                <NavButton onClick={() => setCursor(0)} label="Start">⏮</NavButton>
-                <NavButton onClick={() => setCursor(Math.max(0, cursor - 1))} label="Previous move">←</NavButton>
-                <NavButton onClick={() => setCursor(Math.min(data.plies.length, cursor + 1))} label="Next move">→</NavButton>
-                <NavButton onClick={() => setCursor(data.plies.length)} label="End">⏭</NavButton>
+      {/* Wide two-column layout: the board scales with the viewport (the
+          old fixed 560px looked postage-stamp-sized on large monitors); the
+          sidebar holds the move list + coach detail with its own scroll. */}
+      <div className="flex flex-col gap-5 lg:flex-row">
+        <div className="min-w-0 flex-1">
+          <div className="flex gap-2">
+            {prefs.evalBar.show && (
+              <Ribbon
+                value={(whiteWp - 50) / 50}
+                orientation="vertical"
+                className="w-3 self-stretch"
+                label={`White win probability ${whiteWp.toFixed(0)}%`}
+              />
+            )}
+            <div className="w-full max-w-[min(calc(100vh-20rem),840px)] flex-1">
+              <GameBoard
+                boardId={`review-${game.id}`}
+                fen={fen}
+                orientation={game.userColor}
+                lastMove={current ? { from: current.uci.slice(0, 2), to: current.uci.slice(2, 4) } : null}
+                interactive={false}
+                onMove={() => false}
+                destsFrom={() => []}
+                canSelect={() => false}
+                arrows={reviewArrows}
+              />
+              <div className="mt-2 flex items-center justify-between">
+                <div className="flex gap-1">
+                  <NavButton onClick={() => setCursor(0)} label="Start">⏮</NavButton>
+                  <NavButton onClick={() => setCursor(Math.max(0, cursor - 1))} label="Previous move">←</NavButton>
+                  <NavButton onClick={() => setCursor(Math.min(data.plies.length, cursor + 1))} label="Next move">→</NavButton>
+                  <NavButton onClick={() => setCursor(data.plies.length)} label="End">⏭</NavButton>
+                </div>
+                {current?.timeSpentMs != null && (
+                  <span className="notation text-xs text-text-faint">
+                    {(current.timeSpentMs / 1000).toFixed(1)}s thought
+                  </span>
+                )}
               </div>
-              {current?.timeSpentMs != null && (
-                <span className="notation text-xs text-text-faint">
-                  {(current.timeSpentMs / 1000).toFixed(1)}s thought
-                </span>
+              {hasEvals && (
+                <div className="mt-4">
+                  <RibbonStrip
+                    entries={stripEntries}
+                    currentIndex={cursor > 0 ? cursor - 1 : null}
+                    onSelect={(index) => setCursor(index + 1)}
+                    ariaLabel="Evaluation graph — one bar per move"
+                  />
+                  {keyMoments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {keyMoments.map((ply) => (
+                        <button
+                          key={ply.ply}
+                          onClick={() => setCursor(ply.ply)}
+                          className="flex items-center gap-1 rounded border border-edge px-2 py-0.5 text-xs text-text-dim hover:border-edge-strong hover:text-text"
+                        >
+                          <ClassificationIcon classification={ply.classification!} />
+                          <span className="notation">
+                            {ply.moveNumber}{ply.color === "black" ? "…" : "."} {ply.san}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <MoveList
-            plies={data.plies}
-            cursor={cursor}
-            onSelect={setCursor}
-            figurine={prefs.moveList === "figurine"}
-            pieceSet={prefs.pieceSet}
-          />
+        <div className="w-full min-w-0 lg:w-[26rem] lg:shrink-0 xl:w-[30rem] 2xl:w-[34rem]">
+          <div className="max-h-[46vh] overflow-y-auto lg:max-h-[52vh]">
+            <MoveList
+              plies={data.plies}
+              cursor={cursor}
+              onSelect={setCursor}
+              figurine={prefs.moveList === "figurine"}
+              pieceSet={prefs.pieceSet}
+            />
+          </div>
           {current && (
             <PostmortemGate gameId={gameId} ply={current}>
               <PlyDetail
                 ply={current}
                 nextPly={data.plies[cursor] ?? null}
                 variant={game.variant as VariantId}
+                previewUci={previewUci}
+                onPreview={setPreviewUci}
               />
             </PostmortemGate>
           )}
         </div>
       </div>
-
-      {hasEvals && (
-        <div className="mt-5">
-          <RibbonStrip
-            entries={stripEntries}
-            currentIndex={cursor > 0 ? cursor - 1 : null}
-            onSelect={(index) => setCursor(index + 1)}
-            ariaLabel="Evaluation graph — one bar per move"
-          />
-          {keyMoments.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {keyMoments.map((ply) => (
-                <button
-                  key={ply.ply}
-                  onClick={() => setCursor(ply.ply)}
-                  className="flex items-center gap-1 rounded border border-edge px-2 py-0.5 text-xs text-text-dim hover:border-edge-strong hover:text-text"
-                >
-                  <ClassificationIcon classification={ply.classification!} />
-                  <span className="notation">
-                    {ply.moveNumber}{ply.color === "black" ? "…" : "."} {ply.san}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </Shell>
   );
 }
@@ -742,10 +784,15 @@ function PlyDetail({
   ply,
   nextPly,
   variant,
+  previewUci,
+  onPreview,
 }: {
   ply: PlyPayload;
   nextPly: PlyPayload | null;
   variant: VariantId;
+  /** Alternative currently previewed as a board arrow (toggled by chip). */
+  previewUci: string | null;
+  onPreview: (uci: string | null) => void;
 }) {
   const bestLine = useMemo(
     () => sanLine(ply.fenBefore, ply.pv1, variant),
@@ -758,7 +805,7 @@ function PlyDetail({
     [ply, nextPly, variant]
   );
   const alternatives = useMemo(() => {
-    const options: { san: string; label: string | null }[] = [];
+    const options: { san: string; uci: string; label: string | null }[] = [];
     const seen = new Set<string>();
     const entries: [string[] | null, number | null, number | null][] = [
       [ply.pv1, ply.evalBeforeCp, ply.mateBefore],
@@ -767,9 +814,10 @@ function PlyDetail({
     ];
     for (const [line, cp, mate] of entries) {
       const san = sanLine(ply.fenBefore, line, variant, 1)[0];
-      if (!san || seen.has(san)) continue;
+      const uci = line?.[0];
+      if (!san || !uci || seen.has(san)) continue;
       seen.add(san);
-      options.push({ san, label: evalLabel(cp, mate) });
+      options.push({ san, uci, label: evalLabel(cp, mate) });
     }
     return options;
   }, [ply, variant]);
@@ -823,6 +871,18 @@ function PlyDetail({
           </span>
         )}
         {ply.tbHit && <span className="text-xs text-brilliant">tablebase</span>}
+        {ply.analyzedAtDepth !== null && !ply.degraded && !isProvisional(ply) && (
+          <span
+            className="notation ml-auto text-xs text-text-faint"
+            title={
+              ply.analyzedAtDepth >= 24
+                ? "Eval verified at depth 24 (borderline refinement)"
+                : "Reviewed at depth 18"
+            }
+          >
+            d{ply.analyzedAtDepth}
+          </span>
+        )}
       </div>
 
       {ply.classification && <p className="mt-2 text-sm leading-snug text-text">{verdict}</p>}
@@ -841,10 +901,20 @@ function PlyDetail({
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-text-faint">Alternatives:</span>
           {alternatives.map((option) => (
-            <span key={option.san} className="chip notation">
+            <button
+              key={option.san}
+              onClick={() => onPreview(previewUci === option.uci ? null : option.uci)}
+              aria-pressed={previewUci === option.uci}
+              title="Show this move on the board"
+              className={`chip notation transition-colors ${
+                previewUci === option.uci
+                  ? "border-brilliant text-text"
+                  : "hover:border-edge-strong hover:text-text"
+              }`}
+            >
               {option.san}
               {option.label && <span className="text-text-faint">{option.label}</span>}
-            </span>
+            </button>
           ))}
         </div>
       )}

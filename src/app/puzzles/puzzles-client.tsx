@@ -414,7 +414,7 @@ export function PuzzlesClient() {
       )}
       {error && <p className="mb-3 text-sm text-warn-1">{error}</p>}
       <div className="flex flex-col gap-5 lg:flex-row">
-        <div className="w-full max-w-[560px]">
+        <div className="w-full max-w-[min(calc(100vh-16rem),760px)]">
           <GameBoard
             boardId="puzzle"
             fen={fen || "8/8/8/8/8/8/8/8 w - - 0 1"}

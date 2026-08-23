@@ -79,7 +79,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
+        {/* Wide screens get the width: the old max-w-6xl (1152px) left a
+            1990px monitor mostly empty and made every surface feel shrunk. */}
+        <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-6 pb-24 lg:px-8 lg:pb-8">
           {children}
         </main>
 

@@ -28,17 +28,36 @@ export interface AnalyzeResult {
   /** Final info per MultiPV line, sorted by multipv (side-to-move POV). */
   infos: EngineInfo[];
   bestmove: string | null;
+  /** Search breached its budget and was truncated by `stop` (§3.3). */
+  truncated?: boolean;
 }
+
+/**
+ * §3.3 for the tooling path: a search that breached its budget AND ignored
+ * `stop` — the child was killed and respawned; the caller decides what the
+ * lost search means (the arena voids the game and lets the line-count
+ * checkpoint replay it).
+ */
+export class NodeEngineWedgedError extends Error {
+  constructor(label: string) {
+    super(`node engine wedged: ${label} exceeded its budget and ignored stop`);
+    this.name = "NodeEngineWedgedError";
+  }
+}
+
+const STOP_GRACE_MS = 2_000;
 
 export class NodeEngine {
   private child: ChildProcessWithoutNullStreams | null = null;
   private listeners = new Set<(line: string) => void>();
   private buffer = "";
   private lastMultipv = 1;
+  private initOpts: NodeEngineOpts | null = null;
   /** Serializes searches so concurrent calls can't interleave go/stop. */
   private chain: Promise<unknown> = Promise.resolve();
 
   async init(opts: NodeEngineOpts): Promise<void> {
+    this.initOpts = opts;
     const enginePath = path.resolve(
       process.cwd(),
       "public",
@@ -73,11 +92,17 @@ export class NodeEngine {
     await readyOk;
   }
 
-  /** Fixed-depth MultiPV analysis of a position given as FEN + moves played. */
+  /**
+   * Fixed-depth MultiPV analysis of a position given as FEN + moves played.
+   * With `budgetMs` (§3.3, fitted per shape): breach → `stop` (result comes
+   * back `truncated`); `stop` ignored past a 2s grace → the child is KILLED
+   * and respawned, and NodeEngineWedgedError is thrown.
+   */
   analyze(
     fen: string,
     moves: string[],
-    opts: { depth: number; multipv: number }
+    opts: { depth: number; multipv: number },
+    budgetMs?: number
   ): Promise<AnalyzeResult> {
     return this.enqueue(async () => {
       if (opts.multipv !== this.lastMultipv) {
@@ -98,16 +123,27 @@ export class NodeEngine {
         return false;
       });
       this.send(`go depth ${opts.depth}`);
-      await done;
+      const truncated = await this.awaitWithWatchdog(
+        done,
+        budgetMs,
+        `go depth ${opts.depth} multipv ${opts.multipv}`
+      );
       return {
         infos: [...byMultipv.values()].sort((a, b) => a.multipv - b.multipv),
         bestmove,
+        truncated,
       };
     });
   }
 
-  /** Timed best-move search (reference opponents under UCI_LimitStrength). */
-  bestMove(fen: string, moves: string[], movetimeMs: number): Promise<string | null> {
+  /** Timed best-move search (reference opponents under UCI_LimitStrength).
+   * Same watchdog contract as analyze(). */
+  bestMove(
+    fen: string,
+    moves: string[],
+    movetimeMs: number,
+    budgetMs?: number
+  ): Promise<string | null> {
     return this.enqueue(async () => {
       if (this.lastMultipv !== 1) {
         this.lastMultipv = 1;
@@ -124,9 +160,54 @@ export class NodeEngine {
         return false;
       });
       this.send(`go movetime ${movetimeMs}`);
-      await done;
+      await this.awaitWithWatchdog(done, budgetMs, `go movetime ${movetimeMs}`);
       return bestmove;
     });
+  }
+
+  /**
+   * Awaits a search's bestmove with the §3.3 breach ladder. Returns whether
+   * the search was truncated by a budget-breach `stop`. On a wedge (stop
+   * ignored) the child is killed + respawned and the error propagates.
+   */
+  private async awaitWithWatchdog(
+    done: Promise<string>,
+    budgetMs: number | undefined,
+    label: string
+  ): Promise<boolean> {
+    if (!budgetMs) {
+      await done;
+      return false;
+    }
+    const BREACH = Symbol("breach");
+    const raceTimer = (ms: number) => {
+      let timer: NodeJS.Timeout;
+      const timeout = new Promise<typeof BREACH>((resolve) => {
+        timer = setTimeout(() => resolve(BREACH), ms);
+      });
+      return {
+        run: async () => {
+          const first = await Promise.race([done, timeout]);
+          clearTimeout(timer!);
+          return first;
+        },
+      };
+    };
+    if ((await raceTimer(budgetMs).run()) !== BREACH) return false;
+    this.send("stop");
+    if ((await raceTimer(STOP_GRACE_MS).run()) !== BREACH) return true;
+    await this.restart();
+    throw new NodeEngineWedgedError(label);
+  }
+
+  /** Kill a wedged child and bring up a fresh one with the same options. */
+  private async restart(): Promise<void> {
+    this.child?.kill("SIGKILL");
+    this.child = null;
+    this.listeners.clear();
+    this.buffer = "";
+    this.lastMultipv = 1;
+    if (this.initOpts) await this.init(this.initOpts);
   }
 
   /** Runs `go perft` and returns the node count Stockfish reports. */

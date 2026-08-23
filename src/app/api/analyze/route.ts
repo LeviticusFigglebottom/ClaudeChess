@@ -72,6 +72,9 @@ export async function POST(request: Request) {
       // platform guess: the deadline is checked between searches, so the
       // real ceiling is target + one search budget.
       maxMs: 60_000,
+      // BASIC is the default (owner directive): d24 borderline verification
+      // runs only when the caller asks for the full pass.
+      skipVerify: body.full !== true,
     });
     if (result.analyzedPlies > 0) {
       await consumeUsage(db, user, { kind: "analysisPliesDeep", amount: result.analyzedPlies });

@@ -108,7 +108,9 @@ export function GameBoard({
       arePiecesDraggable={interactive}
       autoPromoteToQueen
       areArrowsAllowed
-      customArrows={arrows?.map((arrow) => [arrow.from, arrow.to, arrow.color] as Arrow)}
+      // Always an array: passing undefined leaves react-chessboard's
+      // previous arrows on the board (stale best-move arrows on later plies).
+      customArrows={(arrows ?? []).map((arrow) => [arrow.from, arrow.to, arrow.color] as Arrow)}
     />
   );
 }

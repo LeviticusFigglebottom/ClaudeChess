@@ -51,6 +51,13 @@ export interface AnalyzeChunkOpts {
   maxPositions?: number;
   /** Wall-clock budget for the chunk; the current position always completes. */
   maxMs?: number;
+  /**
+   * BASIC mode (owner directive 2026-08-23, the DEFAULT for user-initiated
+   * review): skip the §4.2 d24 borderline verification pass — the review
+   * stands on d18 numbers and finalizes immediately. Full depth is the
+   * opt-in ("deep verify" on the review screen re-runs with this false).
+   */
+  skipVerify?: boolean;
   onPly?: (done: number, total: number) => void;
 }
 
@@ -278,10 +285,12 @@ export async function analyzeGameChunk(
       (!row.degraded && (row.analyzedAtDepth ?? 0) < ANALYSIS_SETTINGS.review.depth)
   );
   if (firstUnanalyzed === -1) {
-    const verify = await verifyBorderline(db, gameId, opts, {
-      maxPositions: opts.maxPositions,
-      deadline: opts.maxMs ? Date.now() + opts.maxMs : null,
-    });
+    const verify = opts.skipVerify
+      ? { remaining: 0 }
+      : await verifyBorderline(db, gameId, opts, {
+          maxPositions: opts.maxPositions,
+          deadline: opts.maxMs ? Date.now() + opts.maxMs : null,
+        });
     const finalized = verify.remaining === 0 ? await finalizeDerived(db, gameId, opts) : false;
     return {
       gameId,
@@ -342,10 +351,12 @@ export async function analyzeGameChunk(
   let remaining = total - index;
   let finalized = false;
   if (remaining === 0) {
-    const verify = await verifyBorderline(db, gameId, opts, {
-      maxPositions: maxPositions - positionsUsed,
-      deadline,
-    });
+    const verify = opts.skipVerify
+      ? { remaining: 0 }
+      : await verifyBorderline(db, gameId, opts, {
+          maxPositions: maxPositions - positionsUsed,
+          deadline,
+        });
     remaining = verify.remaining;
     if (verify.remaining === 0) finalized = await finalizeDerived(db, gameId, opts);
   }

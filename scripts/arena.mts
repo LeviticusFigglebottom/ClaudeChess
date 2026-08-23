@@ -30,7 +30,8 @@ import {
   selectBotMove,
   type BotPolicyParams,
 } from "../src/lib/engine/bot";
-import { NodeEngine } from "../src/lib/engine/node-engine";
+import { NodeEngine, NodeEngineWedgedError } from "../src/lib/engine/node-engine";
+import { budgetForMs } from "../src/lib/analysis/budgets";
 import { mulberry32 } from "../src/lib/rng";
 import openings from "../src/db/seed/openings.json";
 
@@ -167,6 +168,7 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
     endReason = reason;
   };
 
+  try {
   while (score === -1) {
     if (position.isCheckmate()) {
       const winner = position.turn === "w" ? "b" : "w";
@@ -195,11 +197,33 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
 
     let uci: string | null = null;
     if (mover.kind === "ref") {
-      uci = await mover.engine.bestMove(START_FEN, moves, args.refMovetimeMs);
+      // Movetime searches are self-limiting; the budget only guards a
+      // wedge (3× the asked time + grace is far past any honest overrun).
+      uci = await mover.engine.bestMove(
+        START_FEN,
+        moves,
+        args.refMovetimeMs,
+        Math.max(10_000, args.refMovetimeMs * 3 + 2_000)
+      );
     } else {
       const search = bandSearchSettings(mover.rating);
-      const shallow = await mover.engine.analyze(START_FEN, moves, search.shallow);
-      const deep = await mover.engine.analyze(START_FEN, moves, search.deep);
+      const shallow = await mover.engine.analyze(
+        START_FEN,
+        moves,
+        search.shallow,
+        budgetForMs(search.shallow.depth, search.shallow.multipv)
+      );
+      const deep = await mover.engine.analyze(
+        START_FEN,
+        moves,
+        search.deep,
+        budgetForMs(search.deep.depth, search.deep.multipv)
+      );
+      if (shallow.truncated || deep.truncated) {
+        console.warn(
+          `[watchdog] g${gameIndex} ply ${moves.length}: search truncated at budget (stop honored) — continuing`
+        );
+      }
       const top = deep.infos[0];
       if (top) {
         // Track from the CALIBRATED bot's perspective for adjudication.
@@ -258,9 +282,11 @@ async function playGame(args: Args, gameIndex: number): Promise<GameRecord> {
     }
     moves.push(played.uci);
   }
-
-  botEngine.quit();
-  for (const engine of extraEngines) engine.quit();
+  } finally {
+    // Quit even when a wedge throws mid-game — never leak engine children.
+    botEngine.quit();
+    for (const engine of extraEngines) engine.quit();
+  }
 
   return {
     game: gameIndex,
@@ -302,7 +328,19 @@ const startedAt = performance.now();
 async function worker(): Promise<void> {
   while (nextGame < args.games) {
     const gameIndex = nextGame++;
-    const record = await playGame(args, gameIndex);
+    let record;
+    try {
+      record = await playGame(args, gameIndex);
+    } catch (error) {
+      if (error instanceof NodeEngineWedgedError) {
+        // §3.3 for self-play: the wedged child was killed; VOID the game
+        // (nothing appended), so the line-count checkpoint replays this
+        // index on the next invocation. A wedge never hangs the run again.
+        console.warn(`[watchdog] g${gameIndex} VOIDED: ${error.message}`);
+        continue;
+      }
+      throw error;
+    }
     appendFileSync(args.out, JSON.stringify(record) + "\n");
     completed++;
     points += record.score;

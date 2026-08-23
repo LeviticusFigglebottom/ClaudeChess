@@ -78,38 +78,39 @@ const record = (name, pass, detail) => {
 // --- Gate: shape-only classification parity ---
 {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(`${base}/play`, { waitUntil: "networkidle" });
-  await page.getByText("or open the free analysis board").click();
 
-  // Book moves produce immediate BOOK badges.
-  for (const san of ["e4", "e5", "Nf3"]) {
-    await page.getByLabel("Keyboard move entry").fill(san);
-    await page.getByRole("button", { name: "Play", exact: true }).click();
-    await page.waitForTimeout(400);
-  }
-  await page.waitForFunction(
-    () => document.querySelectorAll('[role="img"][aria-label]').length >= 3,
-    null,
-    { timeout: 60_000 }
-  );
+  // Book moves produce immediate BOOK badges. The board resets on
+  // navigation, so both capture passes replay the same deterministic moves.
+  const captureBadges = async () => {
+    await page.goto(`${base}/play`, { waitUntil: "networkidle" });
+    await page.getByText("or open the free analysis board").click();
+    for (const san of ["e4", "e5", "Nf3"]) {
+      await page.getByLabel("Keyboard move entry").fill(san);
+      await page.getByRole("button", { name: "Play", exact: true }).click();
+      await page.waitForTimeout(400);
+    }
+    await page.waitForFunction(
+      () => document.querySelectorAll('[role="img"][aria-label]').length >= 3,
+      null,
+      { timeout: 60_000 }
+    );
+    return page.evaluate(() =>
+      [...document.querySelectorAll('main [role="img"][aria-label]')].map((el) => ({
+        label: el.getAttribute("aria-label"),
+        glyph: el.textContent,
+      }))
+    );
+  };
 
-  const before = await page.evaluate(() =>
-    [...document.querySelectorAll('table [role="img"]')].map((el) => ({
-      label: el.getAttribute("aria-label"),
-      glyph: el.textContent,
-    }))
-  );
+  const before = await captureBadges();
 
-  await page.getByText("Board, sound & accessibility settings").click();
+  // The toggle lives on /settings (Accessibility section) since the shell
+  // overhaul — flip it through the real UI control, then re-capture.
+  await page.goto(`${base}/settings`, { waitUntil: "networkidle" });
   await page.getByText("Shape-only classification icons").click();
   await page.waitForTimeout(300);
 
-  const after = await page.evaluate(() =>
-    [...document.querySelectorAll('table [role="img"]')].map((el) => ({
-      label: el.getAttribute("aria-label"),
-      glyph: el.textContent,
-    }))
-  );
+  const after = await captureBadges();
 
   const parity =
     before.length >= 3 &&
