@@ -1,16 +1,107 @@
 {
-  "method": "UNCALIBRATED PLACEHOLDER — spec §6 formula priors. The Phase 1 gate replaces this file with values fitted from >=200 self-play games per band vs reference Stockfish (UCI_Elo anchors + ladder for sub-1320 bands). Uncalibrated constants do not ship.",
-  "referenceMovetimeMs": null,
-  "fittedAt": null,
+  "method": "Fitted from self-play vs Stockfish 18 Lite UCI_LimitStrength anchors at 400ms/move (bands 1000-2200 direct; 1320 floor for 1000/1200) and calibrated-bot ladder opponents for 800/600. Adjudication: forced mate <=6, dead draws, 140-ply cap. Bot side runs the exact shipping policy (revised section 6: band-scaled MultiPV 4-24, truth depth 14 below 1600 / 18 at or above, shallow pass 12 plies behind truth at the same MultiPV) on the shipping engine. Params fitted segment-aware per search shape.",
+  "referenceMovetimeMs": 400,
+  "fittedAt": "2026-08-23T13:13:42.268Z",
   "bands": {
-    "600": { "pBlunder": 0.45, "temperature": 6.0, "measuredElo": null, "ci95": null, "games": 0 },
-    "800": { "pBlunder": 0.45, "temperature": 5.333, "measuredElo": null, "ci95": null, "games": 0 },
-    "1000": { "pBlunder": 0.317, "temperature": 4.667, "measuredElo": null, "ci95": null, "games": 0 },
-    "1200": { "pBlunder": 0.25, "temperature": 4.0, "measuredElo": null, "ci95": null, "games": 0 },
-    "1400": { "pBlunder": 0.183, "temperature": 3.333, "measuredElo": null, "ci95": null, "games": 0 },
-    "1600": { "pBlunder": 0.117, "temperature": 2.667, "measuredElo": null, "ci95": null, "games": 0 },
-    "1800": { "pBlunder": 0.05, "temperature": 2.0, "measuredElo": null, "ci95": null, "games": 0 },
-    "2000": { "pBlunder": 0.02, "temperature": 1.333, "measuredElo": null, "ci95": null, "games": 0 },
-    "2200": { "pBlunder": 0.02, "temperature": 0.667, "measuredElo": null, "ci95": null, "games": 0 }
+    "600": {
+      "pBlunder": 0.4346856136596424,
+      "temperature": 5.846856136596424,
+      "measuredElo": 637,
+      "ci95": 111,
+      "games": 150,
+      "anchors": [
+        "bot-800 (150g)"
+      ],
+      "anchor": "chained(2)"
+    },
+    "800": {
+      "pBlunder": 0.38542649127512324,
+      "temperature": 5.3542649127512325,
+      "measuredElo": 878,
+      "ci95": 87,
+      "games": 200,
+      "anchors": [
+        "sf-elo-1320 (50g)",
+        "bot-1000 (150g)"
+      ],
+      "anchor": "chained(1)"
+    },
+    "1000": {
+      "pBlunder": 0.4,
+      "temperature": 6.2,
+      "measuredElo": 1019,
+      "ci95": 78,
+      "games": 150,
+      "anchors": [
+        "sf-elo-1320@400ms"
+      ],
+      "anchor": "direct"
+    },
+    "1200": {
+      "pBlunder": 0.323,
+      "temperature": 4.733,
+      "measuredElo": 1189,
+      "ci95": 60,
+      "games": 150,
+      "anchors": [
+        "sf-elo-1320@400ms"
+      ],
+      "anchor": "direct"
+    },
+    "1400": {
+      "pBlunder": 0.24169340129922035,
+      "temperature": 3.9169340129922032,
+      "measuredElo": 1410,
+      "ci95": 57,
+      "games": 150,
+      "anchors": [
+        "sf-elo-1320@400ms"
+      ],
+      "anchor": "direct"
+    },
+    "1600": {
+      "pBlunder": 0.22161445073718172,
+      "temperature": 3.7161445073718173,
+      "measuredElo": 1595,
+      "ci95": 56,
+      "games": 150,
+      "anchors": [
+        "sf-elo-1600@400ms"
+      ],
+      "anchor": "direct"
+    },
+    "1800": {
+      "pBlunder": 0.1805792646026848,
+      "temperature": 3.3057926460268483,
+      "measuredElo": 1861,
+      "ci95": 56,
+      "games": 150,
+      "anchors": [
+        "sf-elo-1800@400ms"
+      ],
+      "anchor": "direct"
+    },
+    "2000": {
+      "pBlunder": 0.192,
+      "temperature": 3.42,
+      "measuredElo": 2042,
+      "ci95": 56,
+      "games": 150,
+      "anchors": [
+        "sf-elo-2000@400ms"
+      ],
+      "anchor": "direct"
+    },
+    "2200": {
+      "pBlunder": 0.205,
+      "temperature": 3.55,
+      "measuredElo": 2214,
+      "ci95": 56,
+      "games": 150,
+      "anchors": [
+        "sf-elo-2200@400ms"
+      ],
+      "anchor": "direct"
+    }
   }
 }
