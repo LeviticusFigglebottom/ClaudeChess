@@ -102,7 +102,7 @@ export function FingerprintClient() {
         </div>
       ) : (
         <div className="flex flex-col gap-6 lg:flex-row">
-          <div className="w-full lg:w-[26rem]">
+          <div className="w-full lg:w-[30rem]">
             <div className="card p-4">
               <h2 className="mb-2 text-sm font-semibold text-paper">Tactical vs positional</h2>
               <div className="mb-1 flex h-3 overflow-hidden rounded bg-raise" aria-hidden>
@@ -140,14 +140,14 @@ export function FingerprintClient() {
                       selected === row.motif ? "bg-raise" : ""
                     }`}
                   >
-                    <span className="w-44 truncate text-text-dim">{motifLabel(row.motif)}</span>
+                    <span className="w-44 truncate text-text-dim sm:w-52">{motifLabel(row.motif)}</span>
                     <div className="h-2 flex-1 overflow-hidden rounded bg-raise">
                       <div
                         className="h-full rounded"
                         style={{ width: `${row.share * 100}%`, background: "var(--lcd)" }}
                       />
                     </div>
-                    <span className="notation w-14 text-right text-text">
+                    <span className="notation w-16 shrink-0 whitespace-nowrap text-right text-text">
                       {(row.share * 100).toFixed(0)}% · {row.count}
                     </span>
                   </button>
@@ -213,6 +213,15 @@ export function FingerprintClient() {
             </div>
           </div>
           <div className="w-full lg:flex-1">
+            {!selected && (
+              <div className="hidden h-full min-h-[16rem] items-center justify-center rounded-xl border border-dashed border-edge p-8 lg:flex">
+                <p className="max-w-sm text-center text-sm text-text-faint">
+                  Pick a mechanism on the left to see every game where it cost
+                  you — with the engine&apos;s line, an explanation, and a jump
+                  into the review.
+                </p>
+              </div>
+            )}
             {selected && (
               <div className="card p-4">
                 <h3 className="mb-2 text-sm font-semibold text-paper">

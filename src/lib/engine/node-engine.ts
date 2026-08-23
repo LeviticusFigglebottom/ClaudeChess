@@ -136,14 +136,20 @@ export class NodeEngine {
     });
   }
 
-  /** Timed best-move search (reference opponents under UCI_LimitStrength).
-   * Same watchdog contract as analyze(). */
+  /** Best-move search bounded by movetime or a node cap (reference
+   * opponents + v2 limit-strength bots). Same watchdog contract as
+   * analyze(). */
   bestMove(
     fen: string,
     moves: string[],
-    movetimeMs: number,
+    limit: number | { movetimeMs?: number; nodes?: number },
     budgetMs?: number
   ): Promise<string | null> {
+    const bound = typeof limit === "number" ? { movetimeMs: limit } : limit;
+    const goCmd =
+      bound.nodes !== undefined
+        ? `go nodes ${bound.nodes}`
+        : `go movetime ${bound.movetimeMs ?? 400}`;
     return this.enqueue(async () => {
       if (this.lastMultipv !== 1) {
         this.lastMultipv = 1;
@@ -159,8 +165,8 @@ export class NodeEngine {
         }
         return false;
       });
-      this.send(`go movetime ${movetimeMs}`);
-      await this.awaitWithWatchdog(done, budgetMs, `go movetime ${movetimeMs}`);
+      this.send(goCmd);
+      await this.awaitWithWatchdog(done, budgetMs, goCmd);
       return bestmove;
     });
   }

@@ -9,6 +9,7 @@ import {
   pRandom,
   selectBotMove,
   type BotSearchSnapshot,
+  selectOrganicMove,
 } from "./bot";
 
 function info(uci: string, multipv: number, scoreCp: number | null, mateIn: number | null = null): EngineInfo {
@@ -224,5 +225,52 @@ describe("formula priors (unchanged calibrated-knob formulas)", () => {
     expect(phaseFactor(20, false)).toBe(1);
     expect(phaseFactor(4, false)).toBe(0.5);
     expect(phaseFactor(30, true)).toBe(0.5);
+  });
+});
+
+describe("policy v2: selectOrganicMove", () => {
+  const info = (multipv: number, uci: string, scoreCp: number): EngineInfo => ({
+    depth: 4,
+    multipv,
+    scoreCp,
+    mateIn: null,
+    pv: [uci],
+    nodes: 1000,
+    nps: 100000,
+  });
+
+  it("returns null with no usable lines", () => {
+    expect(selectOrganicMove({ depth: 2, multipv: 4, temperature: 3 }, [], () => 0.5)).toBeNull();
+  });
+
+  it("near-zero temperature collapses to the top line", () => {
+    const infos = [info(1, "e2e4", 50), info(2, "d2d4", 30), info(3, "g1f3", -200)];
+    for (const roll of [0.05, 0.5, 0.95]) {
+      const choice = selectOrganicMove(
+        { depth: 2, multipv: 3, temperature: 0.05 },
+        infos,
+        () => roll
+      );
+      expect(choice?.uci).toBe("e2e4");
+    }
+  });
+
+  it("high temperature spreads across candidates (rng-driven)", () => {
+    const infos = [info(1, "e2e4", 50), info(2, "d2d4", 45), info(3, "g1f3", 40)];
+    const picks = new Set(
+      [0.05, 0.45, 0.92].map(
+        (roll) =>
+          selectOrganicMove({ depth: 2, multipv: 3, temperature: 50 }, infos, () => roll)?.uci
+      )
+    );
+    expect(picks.size).toBeGreaterThan(1);
+  });
+
+  it("never reports a blunder branch (v2 has none)", () => {
+    const infos = [info(1, "e2e4", 50), info(2, "d2d4", -400)];
+    const choice = selectOrganicMove({ depth: 2, multipv: 2, temperature: 2 }, infos, () => 0.1);
+    expect(choice?.kind).toBe("sampled");
+    expect(choice?.blunderAvailable).toBe(false);
+    expect(choice?.effectivePBlunder).toBe(0);
   });
 });

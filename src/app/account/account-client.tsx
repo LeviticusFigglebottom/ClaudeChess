@@ -91,7 +91,7 @@ export function AccountClient() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div>
+    <div className="mx-auto w-full max-w-4xl">
       <h1 className="mb-5 text-2xl font-bold text-paper">Account</h1>
       {children}
     </div>
@@ -407,7 +407,7 @@ function AdminCard() {
           <select
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            className="rounded border border-edge bg-field px-2 py-1.5 text-sm text-text"
+            className="text-sm"
           >
             <option value="">— revoke —</option>
             {["GM", "IM", "FM", "CM", "NM", "WGM", "WIM", "WFM", "WCM"].map((option) => (

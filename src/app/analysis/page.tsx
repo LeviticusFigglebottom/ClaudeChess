@@ -15,7 +15,7 @@ export default async function AnalysisPage({
   const { game } = await searchParams;
   return (
     <div>
-      <h1 className="mb-5 text-xl font-semibold text-paper">Analysis board</h1>
+      <h1 className="mb-5 text-2xl font-bold text-paper">Analysis board</h1>
       <AnalysisBoard initialGameId={game} />
     </div>
   );

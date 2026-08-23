@@ -48,7 +48,7 @@ const TRAINERS: {
 
 export function TrainHub() {
   return (
-    <div>
+    <div className="mx-auto w-full max-w-5xl">
       <h1 className="mb-1 text-2xl font-bold text-paper">Train</h1>
       <p className="mb-1 text-sm text-text-faint">
         Diagnostic instruments over your own games — import and analyze a few games and every trainer lights up.

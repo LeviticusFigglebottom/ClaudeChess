@@ -20,11 +20,19 @@ export interface EngineInitOpts {
    * eval silently corrupts every downstream trainer.
    */
   variant: VariantId;
+  /**
+   * Enables UCI_LimitStrength at this UCI_Elo (bot policy v2: the engine's
+   * native, organic weakening). Instance-wide — never share a limited
+   * engine with analysis work.
+   */
+  limitStrengthElo?: number;
 }
 
 export interface AnalyzeOpts {
   depth?: number;
   movetimeMs?: number;
+  /** `go nodes N` — hardware-independent search size (bot policy v2). */
+  nodes?: number;
   multipv?: number;
 }
 
@@ -47,6 +55,13 @@ export interface EngineClient {
   setPosition(fen: string, moves?: string[]): void;
   /** Streams intermediate results; the last yield before completion is final. */
   analyze(opts: AnalyzeOpts): AsyncIterable<EngineInfo>;
+  /**
+   * The engine's OWN move choice (the `bestmove` token). Required for
+   * UCI_LimitStrength play: the skill limiter deliberately picks moves that
+   * are NOT the top info line — reading pv1 would play stronger than the
+   * configured strength. Optional: only the vanilla worker client offers it.
+   */
+  bestMove?(opts: AnalyzeOpts): Promise<string | null>;
   stop(): void;
   quit(): void;
 }

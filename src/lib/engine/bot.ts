@@ -215,3 +215,95 @@ export function selectBotMove(
     effectivePBlunder,
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* Policy v2 — ORGANIC (owner directive 2026-08-23, supersedes §6).    */
+/*                                                                     */
+/* The v1 texture (wide-MultiPV temperature + a deliberate-blunder     */
+/* branch) measured on-label but read as "strong moves + arbitrary     */
+/* howlers". v2 weakens the way humans are weak:                       */
+/*                                                                     */
+/*  · 1400–2200: Stockfish's own UCI_LimitStrength — the engine's      */
+/*    native skill limiter, played via its REAL bestmove (the limiter  */
+/*    deliberately picks moves that are not the top info line).        */
+/*    Ruler-anchored by construction: the v1 gate DEFINED this scale   */
+/*    with sf-elo anchors at 400ms/move, so SF@label at 400ms IS the   */
+/*    label (1400 uses SF@1320 — the 1400 label is defective at this   */
+/*    movetime, data/calibration/ruler-checks.txt).                    */
+/*  · 600–1200: below SF's UCI_Elo floor (1320) — ONE shallow search   */
+/*    at low MultiPV, mild-temperature softmax over its lines, no      */
+/*    blunder branch, no random floor. Mistakes come from the shallow  */
+/*    eval itself (exactly like a weak human), and every candidate is  */
+/*    something the engine considered playable. Depth carries the      */
+/*    band; temperature adds variety. Params live in                   */
+/*    bot-calibration-v2.json, measured by the arena.                  */
+/* ------------------------------------------------------------------ */
+
+/** The ruler movetime the v1 gate defined the label scale at. */
+export const REFERENCE_MOVETIME_MS = 400;
+
+export interface OrganicParams {
+  depth: number;
+  multipv: number;
+  temperature: number;
+}
+
+export type BotPlan =
+  | {
+      kind: "limitStrength";
+      uciElo: number;
+      /** Ruler condition for the anchor bands (400ms, single thread). */
+      movetimeMs?: number;
+      /**
+       * Node cap for the sub-floor bands (600–1400): SF's UCI_Elo cannot go
+       * below 1320, so those bands keep the limiter's native error model at
+       * 1320 and throttle NODES — hardware-independent (unlike movetime in
+       * a browser) and measured on the same 400ms ruler scale.
+       */
+      nodes?: number;
+    }
+  | ({ kind: "organic" } & OrganicParams);
+
+/**
+ * Softmax over one search's lines (mover POV) at temperature. Returns null
+ * only when the engine produced no usable line.
+ */
+export function selectOrganicMove(
+  params: OrganicParams,
+  infos: EngineInfo[],
+  rng: Rng
+): BotMoveChoice | null {
+  const usable = infos.filter((info) => info.pv.length > 0);
+  if (usable.length === 0) return null;
+  const bestWp = moverWp(usable[0] as EngineInfo);
+  const candidates = usable.map((info) => ({
+    uci: info.pv[0] as string,
+    wpLoss: Math.max(0, bestWp - moverWp(info)),
+  }));
+  const weights = candidates.map((candidate) =>
+    Math.exp(-candidate.wpLoss / Math.max(0.05, params.temperature))
+  );
+  const total = weights.reduce((a, b) => a + b, 0);
+  let roll = rng() * total;
+  for (let i = 0; i < candidates.length; i++) {
+    roll -= weights[i] as number;
+    if (roll <= 0) {
+      const chosen = candidates[i] as (typeof candidates)[number];
+      return {
+        uci: chosen.uci,
+        kind: "sampled",
+        wpLoss: chosen.wpLoss,
+        blunderAvailable: false,
+        effectivePBlunder: 0,
+      };
+    }
+  }
+  const fallback = candidates[0] as (typeof candidates)[number];
+  return {
+    uci: fallback.uci,
+    kind: "sampled",
+    wpLoss: fallback.wpLoss,
+    blunderAvailable: false,
+    effectivePBlunder: 0,
+  };
+}

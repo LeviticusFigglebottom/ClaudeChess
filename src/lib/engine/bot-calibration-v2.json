@@ -1,0 +1,106 @@
+{
+  "policy": "organic-v2",
+  "referenceMovetimeMs": 400,
+  "method": "Owner-directed rework (2026-08-23): natural/organic weakening, all bands measured 2026-08-23. Bands 1600-2200 serve Stockfish's native UCI_LimitStrength at the label and are anchored BY CONSTRUCTION - these exact settings at 400ms/move are the anchors the v1 gate scale was defined on (data/calibration/ruler-checks.txt: 1600/1800/2000/2200 labels mutually consistent). 1400/1200 keep the limiter's native error model and throttle NODES (hardware-independent in browsers; measured DIRECT vs SF@1320@400ms, 100g each). The 1400 LABEL is defective at 400ms (~1243) and the uciElo knob saturates above it (1450->1480, 1500->1497 at movetime) - 1400 ships uciElo 1450 + nodes 30000 (probes: 1430@400ms and 1450@30k both 1409+-144; the node config is hardware-independent). 1000/800/600 are ORGANIC (selectOrganicMove: ONE depth-1 MultiPV search, softmax at temperature; no blunder branch, no random floor) and are measured CHAINED down the ladder (150g each vs the next band up - direct-vs-SF@1320 scores are too extreme below ~1100, e.g. t9 scored 8.5% giving +-122): ci95 quotes match (+) anchor in quadrature. Organic knob map (measured): temperature saturates toward uniform-over-lines (~920 ceiling-floor at mpv8); MultiPV is the sub-900 knob (d1 t12: mpv8~920, mpv10~754, mpv11~619(40g)/678(150g), mpv13:t14=594). Regenerate only via scripts/arena.mts + scripts/fit-organic.mts --finalize; never hand-edit measured fields.",
+  "bands": {
+    "600": {
+      "method": "organic",
+      "depth": 1,
+      "multipv": 13,
+      "temperature": 14,
+      "measuredElo": 594,
+      "ci95": 135,
+      "games": 150,
+      "anchor": "chained(3)",
+      "anchors": [
+        "bot-800@d1:9:t12 (150g)"
+      ]
+    },
+    "800": {
+      "method": "organic",
+      "depth": 1,
+      "multipv": 9,
+      "temperature": 12,
+      "measuredElo": 801,
+      "ci95": 118,
+      "games": 150,
+      "anchor": "chained(2)",
+      "anchors": [
+        "bot-1000@d1:8:t8.5 (150g)"
+      ]
+    },
+    "1000": {
+      "method": "organic",
+      "measuredElo": 957,
+      "ci95": 101,
+      "games": 150,
+      "anchor": "chained(1)",
+      "anchors": [
+        "bot-1200@n5000 (150g)"
+      ],
+      "depth": 1,
+      "multipv": 8,
+      "temperature": 8.5
+    },
+    "1200": {
+      "method": "sf-limitstrength",
+      "measuredElo": 1220,
+      "ci95": 71,
+      "games": 100,
+      "anchor": "direct",
+      "anchors": [
+        "sf-elo-1320@400ms (100g)"
+      ],
+      "uciElo": 1320,
+      "nodes": 5000
+    },
+    "1400": {
+      "method": "sf-limitstrength",
+      "measuredElo": 1394,
+      "ci95": 70,
+      "games": 100,
+      "anchor": "direct",
+      "anchors": [
+        "sf-elo-1320@400ms (100g)"
+      ],
+      "uciElo": 1450,
+      "nodes": 30000
+    },
+    "1600": {
+      "method": "sf-limitstrength",
+      "uciElo": 1600,
+      "measuredElo": 1600,
+      "ci95": null,
+      "games": 0,
+      "anchor": "native",
+      "derivation": "scale anchor: sf-elo-1600@400ms defined 1600 on the v1 gate scale"
+    },
+    "1800": {
+      "method": "sf-limitstrength",
+      "uciElo": 1800,
+      "measuredElo": 1800,
+      "ci95": null,
+      "games": 0,
+      "anchor": "native",
+      "derivation": "scale anchor: sf-elo-1800@400ms defined 1800 on the v1 gate scale"
+    },
+    "2000": {
+      "method": "sf-limitstrength",
+      "uciElo": 2000,
+      "measuredElo": 2000,
+      "ci95": null,
+      "games": 0,
+      "anchor": "native",
+      "derivation": "scale anchor: sf-elo-2000@400ms defined 2000 on the v1 gate scale"
+    },
+    "2200": {
+      "method": "sf-limitstrength",
+      "uciElo": 2200,
+      "measuredElo": 2200,
+      "ci95": null,
+      "games": 0,
+      "anchor": "native",
+      "derivation": "scale anchor: sf-elo-2200@400ms defined 2200 on the v1 gate scale"
+    }
+  }
+}

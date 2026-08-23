@@ -305,7 +305,7 @@ export function LiveClient({ gameId }: { gameId: string }) {
   return (
     <Shell>
       <div ref={liveRef} className="sr-only" role="status" aria-live="polite" />
-      <div className="flex flex-col gap-5 lg:flex-row">
+      <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5 lg:flex-row">
         <div className="w-full max-w-[min(calc(100vh-16rem),760px)]">
           <PlayerBar player={topPlayer} clockMs={topClock} active={state.status === "active" && state.turn !== orientation} flag={topClock <= 0} />
           <div className="my-2 flex gap-2">

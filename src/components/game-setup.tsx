@@ -176,11 +176,14 @@ export function GameSetupCard({
         {!ratedAllowed && <span className="text-xs text-text-faint">untimed games are casual</span>}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <button onClick={start} className="btn-primary">
           Start game
         </button>
-        <button onClick={onFreeBoard} className="text-sm text-text-dim hover:text-text">
+        <button
+          onClick={onFreeBoard}
+          className="whitespace-nowrap text-sm text-text-dim hover:text-text"
+        >
           or open the free analysis board →
         </button>
       </div>

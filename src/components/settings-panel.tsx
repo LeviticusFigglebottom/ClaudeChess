@@ -21,14 +21,17 @@ export function SettingsSections() {
   const { prefs, update } = usePrefs();
   const [previewOrientation] = useState<"white" | "black">("white");
 
-  const select = "rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-sm text-text";
+  // Chrome (border/padding/chevron) comes from the global `select` rule.
+  const select = "text-sm";
   const row = "flex items-center justify-between gap-4 py-2";
   const label = "text-sm text-text-dim";
   const heading = "mb-3 text-base font-semibold text-paper";
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-      <div className="flex flex-col gap-5">
+    // min-w-0/minmax(0,…) on both tracks: the preview board's intrinsic
+    // width must never blow the grid out past the viewport (mobile overflow).
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="flex min-w-0 flex-col gap-5">
         {/* Board & pieces */}
         <section className="card p-5">
           <h2 className={heading}>Board &amp; pieces</h2>
@@ -65,7 +68,7 @@ export function SettingsSections() {
           </div>
 
           <p className="mb-2 mt-5 text-xs uppercase tracking-wide text-text-faint">Pieces</p>
-          <div className="flex gap-2.5">
+          <div className="flex flex-wrap gap-2.5">
             {(["cburnett", "merida", "chessnut", "fantasy", "classic"] as PieceSetId[]).map((set) => (
               <button
                 key={set}
@@ -260,8 +263,8 @@ export function SettingsSections() {
       </div>
 
       {/* Live preview */}
-      <div className="order-first lg:order-none">
-        <div className="card sticky top-16 p-4">
+      <div className="order-first min-w-0 lg:order-none">
+        <div className="card sticky top-16 mx-auto w-full max-w-md p-4 lg:max-w-none">
           <p className="mb-2 text-xs uppercase tracking-wide text-text-faint">Preview</p>
           <GameBoard
             boardId="settings-preview"

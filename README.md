@@ -339,6 +339,32 @@ The global tier (`eval_cache_global`, migration 0018) shares evals across every 
 
 **Bots: the texture complaint is real and diagnosed, not yet reworked.** The live path was audited against the arena — wiring is faithful (same shapes, same policy, same calibrated params), and the measured Elo is honest *versus the SF@400ms ruler*. The problem is the §6 policy itself: temperature sampling across up to 24 engine lines plus an explicit deliberate-blunder branch (32% eligibility at 1200) produces "mostly plausible + arbitrary howlers", which humans read as broken regardless of the average — and the label scale is the SF-UCI_Elo pool, not perceived human strength. The directed fix (organic weakening: SF `LimitStrength` backbone where its range reaches, low-MultiPV mild-temperature sampling below it, no deliberate-blunder branch) **invalidates the shipped params by construction** and needs the arena+fit pipeline re-run per band before any label ships — that recalibration is the next dedicated effort, now cheaper and safer under the self-play watchdog.
 
+## Bot policy v2 — organic strength, re-measured from scratch
+
+The directed rework landed and **every band is measured** (policy change invalidates calibration by construction — so the whole ladder was re-run in-session under the §3.3-watchdogged arena). The v1 texture (softmax over up to 24 lines + an explicit pBlunder branch) is gone. v2 has two tiers, in `src/lib/engine/bot.ts` + `bot-calibration-v2.json`:
+
+- **1600–2200 — the engine's own weakening.** Stockfish `UCI_LimitStrength` at the label, played via the REAL `bestmove` token (the limiter deliberately chooses off the top info line — serving pv1 would erase its human-textured error model; `EngineClient.bestMove` exists for exactly this). Single thread, 400ms — the identical settings the v1 gate used as ruler anchors, so these bands are **anchors by construction** (tag: "native (engine)").
+- **600–1400 — measured configs below the limiter's floor.** 1400/1200 keep the limiter's error model and throttle **nodes** (hardware-independent in browsers, unlike movetime): 1200 = SF@1320 + 5k nodes, 1400 = SF@1450 + 30k nodes. 1000/800/600 are **organic sampling** (`selectOrganicMove`): ONE depth-1 MultiPV search, softmax at temperature — mistakes come from the shallow eval itself, like a human's, with no blunder branch and no random floor. In play the 600 answers 1.e4 with moves like 1…g6 — playable, imperfect, never scripted.
+
+| band | config | measured | anchor |
+|---|---|---|---|
+| 600 | organic d1 · mpv 13 · τ14 | **594 ±135** (match ±66) | chained(3), 150g vs bot-800 |
+| 800 | organic d1 · mpv 9 · τ12 | **801 ±118** (match ±61) | chained(2), 150g vs bot-1000 |
+| 1000 | organic d1 · mpv 8 · τ8.5 | **957 ±101** (match ±72) | chained(1), 150g vs bot-1200 |
+| 1200 | SF@1320 · 5k nodes | **1220 ±71** | direct, 100g vs SF@1320\@400ms |
+| 1400 | SF@1450 · 30k nodes | **1394 ±70** | direct, 100g vs SF@1320\@400ms |
+| 1600–2200 | SF@label · 400ms | = label | native (defined the v1 gate scale) |
+
+Point-estimate deviations from label: −6 / +1 / −43 / +20 / −6 / 0×4. Chained `ci95` quotes match ⊕ anchor in quadrature (v1 convention). The knob map was measured, not guessed, and is documented in the calibration file: SF's **1400 label is defective** at 400ms (~1243) and the uciElo knob **saturates** above it (1450→1480, 1500→1497) — hence 1400 ships the 1450 limiter node-capped (both candidates probed 1409±144; nodes won on hardware-independence). The organic **temperature knob saturates** toward uniform-over-lines (~920 floor at mpv8: τ10 measured 917±115 at 150g); **MultiPV is the sub-900 knob** (d1 τ12: mpv8→~920, mpv10→754, mpv11→678, mpv13:τ14→594). Sub-1200 bands measure **chained** because scores vs SF@1320 go extreme (τ9 scored 8.5% → ±122 on 100g). Small probes lie: 24–40g runs carried ±140–350 CIs and twice inverted the ladder ordering — only the ≥100-game fits above count. UI pacing (350–2500ms humanized think delay) is presentation only; the arena bypasses it. `scripts/fit-organic.mts --finalize` writes measured params+numbers — the file cannot drift from the evidence JSONLs in `data/calibration/` (v1's `bot-calibration.json` stays as Phase 1 gate history).
+
+## The sizing pass — measured overflows, filled voids, one vocabulary
+
+Both reported symptoms reproduced on screenshots at 1920×1080 and 390×844 and are fixed at the cause:
+
+- **Mobile overflows (real bugs):** the settings preview board blew its grid track out to 479px on a 390px viewport (`document.scrollWidth` 495) — grid items need `min-w-0` when react-chessboard's intrinsic width is the min-content; the piece-set chip row didn't wrap; the Puzzles h1 and rating line jammed into one run-on string. All three fixed; the verification pass asserts `scrollWidth ≤ viewport` on every page at 390px.
+- **Desktop voids:** the games list was a flex row with `ml-auto` meta — content left, metadata far right, ~600px of nothing between. Rows are now a fixed-column grid (result pill · opponent+opening · time control · source · review state · date) that reads as a table. The home dashboard fills its fold with a 3-across bento plus a **Recent games** card; the fingerprint report widens to `30rem` + an explanatory empty-state panel where the instance list will appear; trainer pages sit in the same centered `max-w-5xl` shell as the hub instead of hugging the left edge; the puzzles rail carries a live **session tally** (solved/failed/streak) and a rules card.
+- **One vocabulary:** every page h1 is `text-2xl font-bold`; card pages cap at 4xl/5xl/6xl by density; board pages share the viewport-scaled board math; native `<select>`s are restyled globally (chevron, chip borders) so the challenge/settings/admin dropdowns stop looking like a different product. Result W/½/L pills replaced the cryptic lone digits.
+
 ## What remains
 
 Phase 1's bot-calibration gate is **CLOSED** (all nine bands, table above). From the deployment pass: gate (d)'s live-key half (usage metering vs real token counts, `(motifChain, evidenceHash)` cache hits on real calls) stays **deferred until an `ANTHROPIC_API_KEY` is provisioned** — degraded mode is verified; gate (b)'s emailed-confirmation leg needs Supabase's "Secure email change" toggled off (and a mailbox to fully exercise delivery); `explorer.lichess.ovh` remains provider-blocked from cloud egress. Last: crazyhouse if a drop-capable board ever justifies it (B1.1).

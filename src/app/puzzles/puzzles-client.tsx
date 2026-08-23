@@ -65,6 +65,7 @@ export function PuzzlesClient() {
   const [delta, setDelta] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<PuzzleMode>("rated");
+  const [session, setSession] = useState({ solved: 0, failed: 0, streak: 0, bestStreak: 0 });
   const modeRef = useRef<PuzzleMode>("rated");
   // Theme preset (rated mode): narrows the pool server-side. Works for
   // guests too — a themed starter deck beats an empty toolbox.
@@ -219,6 +220,17 @@ export function PuzzlesClient() {
     async (solved: boolean) => {
       if (attemptedRef.current || !puzzle) return;
       attemptedRef.current = true;
+      // Session tally counts every first attempt (own drills included);
+      // retries stay unrated AND uncounted via the attemptedRef guard.
+      setSession((s) => {
+        const streak = solved ? s.streak + 1 : 0;
+        return {
+          solved: s.solved + (solved ? 1 : 0),
+          failed: s.failed + (solved ? 0 : 1),
+          streak,
+          bestStreak: Math.max(s.bestStreak, streak),
+        };
+      });
       // Own-game drills are unrated by design — nothing is booked.
       if (puzzle.id.startsWith("own:")) return;
       try {
@@ -413,7 +425,7 @@ export function PuzzlesClient() {
         </div>
       )}
       {error && <p className="mb-3 text-sm text-warn-1">{error}</p>}
-      <div className="flex flex-col gap-5 lg:flex-row">
+      <div className="flex w-full flex-col gap-5 lg:flex-row">
         <div className="w-full max-w-[min(calc(100vh-16rem),760px)]">
           <GameBoard
             boardId="puzzle"
@@ -430,7 +442,7 @@ export function PuzzlesClient() {
             }}
           />
         </div>
-        <div className="w-full lg:w-80">
+        <div className="flex w-full flex-col gap-4 lg:w-96">
           <div className="card p-4">
             {phase === "loading" && <p className="text-sm text-text-faint">Loading puzzle…</p>}
             {(phase === "presenting" || phase === "solving") && puzzle && position && (
@@ -511,6 +523,39 @@ export function PuzzlesClient() {
               </div>
             )}
           </div>
+
+          {(session.solved > 0 || session.failed > 0) && (
+            <div className="card p-4">
+              <p className="mb-2 text-xs uppercase tracking-wide text-text-faint">This session</p>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg bg-surface-2 py-2">
+                  <p className="notation text-lg text-brilliant">{session.solved}</p>
+                  <p className="text-[11px] text-text-faint">solved</p>
+                </div>
+                <div className="rounded-lg bg-surface-2 py-2">
+                  <p className="notation text-lg text-warn-1">{session.failed}</p>
+                  <p className="text-[11px] text-text-faint">failed</p>
+                </div>
+                <div className="rounded-lg bg-surface-2 py-2">
+                  <p className="notation text-lg text-text">
+                    {session.streak}
+                    {session.bestStreak > session.streak && (
+                      <span className="text-xs text-text-faint"> / {session.bestStreak}</span>
+                    )}
+                  </p>
+                  <p className="text-[11px] text-text-faint">streak</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="card hidden p-4 lg:block">
+            <p className="text-xs text-text-faint">
+              Rating moves only on your first try — after a miss, retrying and
+              viewing the solution are free. Tap a piece, then its target, or
+              drag. Every line must be played to the end.
+            </p>
+          </div>
         </div>
       </div>
     </Shell>
@@ -519,9 +564,9 @@ export function PuzzlesClient() {
 
 function Shell({ rating, children }: { rating: RatingPayload | null; children: React.ReactNode }) {
   return (
-    <div>
-      <div className="mb-5 flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold text-paper">Puzzles</h1>
+    <div className="mx-auto w-full max-w-[1180px]">
+      <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <h1 className="text-2xl font-bold text-paper">Puzzles</h1>
         {rating && (
           <span className="notation text-sm text-text-dim" title="Puzzle rating — its own pool, never comparable to game ratings">
             puzzle rating {rating.rating.toFixed(0)} ± {rating.rd.toFixed(0)}

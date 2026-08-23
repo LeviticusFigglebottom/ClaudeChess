@@ -68,6 +68,7 @@ export class StockfishClient implements EngineClient {
   private active: ActiveSearch | null = null;
   private lineListeners = new Set<(line: string) => void>();
   private lastMultipv = 1;
+  private lastBestmove: string | null = null;
   private initialized = false;
   /** Serializes analyze() starts so rapid calls can't interleave go/stop. */
   private startChain: Promise<void> = Promise.resolve();
@@ -113,6 +114,10 @@ export class StockfishClient implements EngineClient {
     if (opts.variant === "chess960") {
       // Engine then reads X-FEN castling and speaks king-takes-rook UCI.
       this.send("setoption name UCI_Chess960 value true");
+    }
+    if (opts.limitStrengthElo !== undefined) {
+      this.send("setoption name UCI_LimitStrength value true");
+      this.send(`setoption name UCI_Elo value ${opts.limitStrengthElo}`);
     }
     if (fairy) {
       this.send(`setoption name UCI_Variant value ${FAIRY_UCI_VARIANT[opts.variant] ?? opts.variant}`);
@@ -162,7 +167,10 @@ export class StockfishClient implements EngineClient {
       const goParts = ["go"];
       if (opts.depth !== undefined) goParts.push("depth", String(opts.depth));
       if (opts.movetimeMs !== undefined) goParts.push("movetime", String(opts.movetimeMs));
-      if (opts.depth === undefined && opts.movetimeMs === undefined) goParts.push("infinite");
+      if (opts.nodes !== undefined) goParts.push("nodes", String(opts.nodes));
+      if (opts.depth === undefined && opts.movetimeMs === undefined && opts.nodes === undefined) {
+        goParts.push("infinite");
+      }
       this.send(goParts.join(" "));
     };
 
@@ -198,12 +206,26 @@ export class StockfishClient implements EngineClient {
         this.active.queue.push(info);
         return;
       }
-      if (parseBestmoveLine(line) !== null) {
+      const best = parseBestmoveLine(line);
+      if (best !== null) {
+        this.lastBestmove = best === "(none)" ? null : best;
         this.active.queue.end();
         this.active.resolveDone();
         this.active = null;
       }
     }
+  }
+
+  /**
+   * The engine's own `bestmove` for one search. Under UCI_LimitStrength the
+   * skill limiter's choice deliberately differs from the top info line —
+   * this is the ONLY honest way to play at the configured strength.
+   */
+  async bestMove(opts: AnalyzeOpts): Promise<string | null> {
+    for await (const _info of this.analyze(opts)) {
+      // Drain — the search's terminating bestmove is captured in route().
+    }
+    return this.lastBestmove;
   }
 
   private send(command: string): void {

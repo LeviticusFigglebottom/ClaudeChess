@@ -6,7 +6,7 @@ const FEATURES = [
   {
     href: "/play",
     title: "Play",
-    body: "Calibrated bots from 600 to 2400, Chess960, live games with friends — every strength label is measured, not guessed.",
+    body: "Calibrated bots from 600 to 2200, Chess960, live games with friends — every strength label is measured, not guessed.",
     accent: true,
   },
   {
@@ -43,7 +43,7 @@ export default function Home() {
 /** Server-rendered guest landing (also the SSR shell before auth resolves). */
 function MarketingHome() {
   return (
-    <div className="flex flex-col gap-12 py-4">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-12 py-4">
       <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_1fr]">
         <div>
           <h1 className="text-4xl font-bold leading-tight tracking-tight text-paper sm:text-5xl">

@@ -341,7 +341,8 @@ export function ReviewClient({ gameId }: { gameId: string }) {
         )}
         {accuracy.white !== null && accuracy.black !== null && (
           <span className="notation ml-auto text-sm text-text-dim">
-            accuracy {accuracy.white.toFixed(1)} · {accuracy.black.toFixed(1)}
+            accuracy <span className="text-text-faint">W</span> {accuracy.white.toFixed(1)} ·{" "}
+            <span className="text-text-faint">B</span> {accuracy.black.toFixed(1)}
           </span>
         )}
       </header>
@@ -509,7 +510,7 @@ export function ReviewClient({ gameId }: { gameId: string }) {
         </div>
 
         <div className="w-full min-w-0 lg:w-[26rem] lg:shrink-0 xl:w-[30rem] 2xl:w-[34rem]">
-          <div className="max-h-[46vh] overflow-y-auto lg:max-h-[52vh]">
+          <div className="max-h-[46vh] overflow-y-auto lg:max-h-[62vh]">
             <MoveList
               plies={data.plies}
               cursor={cursor}

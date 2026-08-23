@@ -17,7 +17,7 @@ export function TrainerGate({
 }) {
   const on = useFlag(flag);
   return (
-    <div>
+    <div className="mx-auto w-full max-w-5xl">
       <div className="mb-4 flex items-baseline justify-between gap-4">
         <h1 className="text-2xl font-bold text-paper">{title}</h1>
         <Link href="/train" className="text-sm text-text-dim hover:text-text">

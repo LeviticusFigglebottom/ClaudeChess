@@ -92,7 +92,7 @@ function Dashboard({ handle }: { handle: string }) {
   const unanalyzed = (games ?? []).filter(needsAnalysis);
 
   return (
-    <div className="py-2">
+    <div className="mx-auto w-full max-w-5xl py-2">
       <h1 className="text-2xl font-bold text-paper">
         Welcome back, <span className="notation">{handle}</span>
       </h1>
@@ -100,11 +100,13 @@ function Dashboard({ handle }: { handle: string }) {
         Your daily loop: sync, analyze, see the pattern, drill it.
       </p>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Bento: three across on xl so the fold is content, not void. */}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <SyncCard linked={linked} unanalyzed={unanalyzed} onDone={reload} />
         <LatestGameCard game={latest} loaded={games !== null} />
-        <FingerprintCard report={fingerprint} />
         <DrillCard drill={drill} drillCount={drillCount} />
+        <FingerprintCard report={fingerprint} />
+        <RecentGamesCard games={games} className="md:col-span-2" />
       </div>
 
       <div className="mt-6 flex flex-wrap gap-3">
@@ -125,6 +127,63 @@ function Dashboard({ handle }: { handle: string }) {
         </Link>
       </div>
     </div>
+  );
+}
+
+function RecentGamesCard({
+  games,
+  className,
+}: {
+  games: GameRowPayload[] | null;
+  className?: string;
+}) {
+  const recent = (games ?? []).filter((game) => !game.isStudy).slice(0, 6);
+  if (recent.length < 2) return null;
+  return (
+    <section className={`card p-5 ${className ?? ""}`}>
+      <div className="mb-2 flex items-baseline justify-between">
+        <h2 className="text-base font-semibold text-paper">Recent games</h2>
+        <Link href="/games" className="text-xs text-text-dim hover:text-text hover:underline">
+          all games →
+        </Link>
+      </div>
+      <ul>
+        {recent.map((game) => {
+          const won =
+            (game.result === "1-0" && game.userColor === "white") ||
+            (game.result === "0-1" && game.userColor === "black");
+          const drew = game.result === "1/2-1/2";
+          const opponent = game.userColor === "black" ? game.whiteName : game.blackName;
+          return (
+            <li key={game.id} className="border-b border-edge last:border-0">
+              <Link
+                href={`/analysis/${game.id}`}
+                className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-2 py-1.5 text-sm transition-colors hover:bg-surface-2"
+              >
+                <span
+                  className={`notation text-center text-xs font-semibold ${
+                    won ? "text-brilliant" : drew ? "text-text-dim" : "text-warn-1"
+                  }`}
+                >
+                  {won ? "W" : drew ? "½" : "L"}
+                </span>
+                <span className="truncate text-text">
+                  vs {opponent}
+                  {game.opening && (
+                    <span className="ml-2 hidden truncate text-xs text-text-faint sm:inline">
+                      {game.opening}
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs text-text-faint">
+                  {game.playedAt ? new Date(game.playedAt).toLocaleDateString() : ""}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

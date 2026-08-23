@@ -189,7 +189,7 @@ export function GamesClient() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div>
+    <div className="mx-auto w-full max-w-5xl">
       <h1 className="mb-5 text-2xl font-bold text-paper">Games</h1>
       {children}
     </div>
@@ -206,16 +206,24 @@ function GameRow({ game }: { game: GameRowPayload }) {
   const analyzed = game.plyCount > 0 && game.reviewedCount === game.plyCount;
   return (
     <li className="border-b border-edge last:border-0">
+      {/* Fixed meta columns so rows align like a table — a flex row with
+          ml-auto meta left a dead middle at desktop widths. */}
       <Link
         href={`/analysis/${game.id}`}
-        className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2"
+        className="grid grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-3 px-4 py-2.5 transition-colors hover:bg-surface-2 sm:grid-cols-[2.25rem_minmax(0,1fr)_4.5rem_7.5rem_7rem_5.5rem]"
       >
         <span
-          className={`notation w-8 text-sm ${won ? "text-brilliant" : drew ? "text-text-dim" : "text-warn-1"}`}
+          className={`notation inline-flex h-7 w-7 items-center justify-center rounded-md text-sm font-semibold ${
+            won
+              ? "bg-[color-mix(in_oklab,var(--brilliant)_18%,transparent)] text-brilliant"
+              : drew
+                ? "bg-surface-2 text-text-dim"
+                : "bg-[color-mix(in_oklab,var(--warn-1)_14%,transparent)] text-warn-1"
+          }`}
         >
-          {won ? "1" : drew ? "½" : "0"}
+          {won ? "W" : drew ? "½" : "L"}
         </span>
-        <span className="min-w-0 flex-1">
+        <span className="min-w-0">
           <span className="block truncate text-sm text-text">
             vs {opponent}
             {game.variant === "chess960" && (
@@ -229,24 +237,24 @@ function GameRow({ game }: { game: GameRowPayload }) {
         <span className="notation hidden text-xs text-text-faint sm:block">
           {game.timeControl ?? ""}
         </span>
-        <span className="hidden text-xs text-text-faint sm:block">
+        <span className="hidden truncate text-xs text-text-faint sm:block">
           {game.source === "local" ? "played here" : `${game.source} import`}
         </span>
         {analyzed ? (
-          <span className="text-xs text-text-dim">
+          <span className="text-right text-xs text-text-dim sm:text-left">
             reviewed
             {game.errorCount > 0 && (
               <span className="notation ml-1 text-warn-2">{game.errorCount}✗</span>
             )}
           </span>
         ) : game.analyzedCount > 0 ? (
-          <span className="notation text-xs text-text-faint">
+          <span className="notation text-right text-xs text-text-faint sm:text-left">
             {Math.round((game.analyzedCount / Math.max(1, game.plyCount)) * 100)}%
           </span>
         ) : (
-          <span className="text-xs text-text-faint">not analyzed</span>
+          <span className="text-right text-xs text-text-faint sm:text-left">not analyzed</span>
         )}
-        <span className="text-xs text-text-faint">
+        <span className="hidden text-right text-xs text-text-faint sm:block">
           {game.playedAt ? new Date(game.playedAt).toLocaleDateString() : ""}
         </span>
       </Link>

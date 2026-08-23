@@ -14,7 +14,7 @@ import {
   type ClockConfig,
   type ClockState,
 } from "@/lib/clock/clock";
-import { bandSearchSettings, pRandom, selectBotMove, type BotRating } from "@/lib/engine/bot";
+import { selectOrganicMove, type BotRating } from "@/lib/engine/bot";
 import { botForRating, type BotDefinition } from "@/lib/engine/bots";
 import { createEngine, defaultThreads, type EngineInfo, type StockfishClient } from "@/lib/engine";
 import type { SaveGamePayload } from "@/lib/account/games";
@@ -282,44 +282,52 @@ export function useBotGame(prefs: Prefs, onFinished?: (payload: SaveGamePayload)
       if (generation !== generationRef.current) return;
       const startFen = position.startFen;
       const moves = position.history().map((move) => move.uci);
-      const search = bandSearchSettings(bot.rating);
+      // Policy v2 (organic): high bands play the engine's OWN choice under
+      // UCI_LimitStrength (its native, human-textured weakening — the real
+      // bestmove, which the limiter deliberately picks off the top line);
+      // low bands sample one shallow low-MultiPV search at mild temperature.
+      // No deliberate-blunder branch anywhere.
+      const plan = bot.plan;
+      let uci: string | undefined;
       engine.setPosition(startFen, moves);
-      const shallow = await finalInfos(engine.analyze(search.shallow));
-      if (generation !== generationRef.current) return;
-      engine.setPosition(startFen, moves);
-      const deep = await finalInfos(engine.analyze(search.deep));
-      if (generation !== generationRef.current) return;
-
-      const top = deep[0];
-      lastBotEvalCpRef.current = top
-        ? top.mateIn !== null
-          ? top.mateIn > 0
-            ? 3000
-            : -3000
-          : (top.scoreCp ?? 0)
-        : null;
-
-      const choice = selectBotMove(
-        bot.rating,
-        bot.params,
-        {
-          shallow,
-          deep,
-          legalMoveCount: position.legalMoveCount(),
-          inCheck: position.isCheck(),
-          randomSafeMoves: pRandom(bot.rating) > 0 ? position.legalMovesAvoidingMateInOne() : [],
-        },
-        Math.random
-      );
-      const uci = choice?.uci ?? deep[0]?.pv[0];
+      if (plan.kind === "limitStrength") {
+        uci =
+          (await engine.bestMove?.(
+            plan.nodes !== undefined
+              ? { nodes: plan.nodes, multipv: 1 }
+              : { movetimeMs: plan.movetimeMs ?? 400, multipv: 1 }
+          )) ?? undefined;
+        if (generation !== generationRef.current) return;
+        lastBotEvalCpRef.current = null; // search infos don't reflect the limiter's choice
+      } else {
+        const infos = await finalInfos(
+          engine.analyze({ depth: plan.depth, multipv: plan.multipv })
+        );
+        if (generation !== generationRef.current) return;
+        const top = infos[0];
+        lastBotEvalCpRef.current = top
+          ? top.mateIn !== null
+            ? top.mateIn > 0
+              ? 3000
+              : -3000
+            : (top.scoreCp ?? 0)
+          : null;
+        const choice = selectOrganicMove(plan, infos, Math.random);
+        uci = choice?.uci ?? infos[0]?.pv[0];
+      }
       if (!uci) {
         checkNaturalEnd();
         return;
       }
 
-      // Keep even instant book replies from feeling robotic.
+      // Humanized pace (presentation only — strength comes from the plan;
+      // the calibration arena bypasses this). Node-capped and shallow
+      // organic searches return in ~100ms, which reads as robotic: pace
+      // replies as mostly-quick with occasional longer "thinks". Wall time
+      // still charges the bot's clock honestly.
+      const pace = 350 + Math.random() * 550 + (Math.random() < 0.18 ? 700 + Math.random() * 1500 : 0);
       const elapsed = Date.now() - startedAt;
-      if (elapsed < 450) await new Promise((resolve) => setTimeout(resolve, 450 - elapsed));
+      if (elapsed < pace) await new Promise((resolve) => setTimeout(resolve, pace - elapsed));
       if (generation !== generationRef.current) return;
 
       if (!applyClockForMover()) return;
@@ -330,12 +338,8 @@ export function useBotGame(prefs: Prefs, onFinished?: (payload: SaveGamePayload)
         // here would freeze the bot mid-game with no feedback. Recover
         // visibly: engine's pv1, else any legal move — never a dead game.
         console.error(`[bot] chose illegal move ${uci} — recovering`);
-        const fallback = deep[0]?.pv[0];
-        if (fallback && fallback !== uci) played = position.moveUci(fallback);
-        if (!played) {
-          const any = position.legalMovesUci()[0];
-          if (any) played = position.moveUci(any);
-        }
+        const any = position.legalMovesUci()[0];
+        if (any) played = position.moveUci(any);
         if (!played) {
           checkNaturalEnd();
           return;
@@ -379,10 +383,15 @@ export function useBotGame(prefs: Prefs, onFinished?: (payload: SaveGamePayload)
 
       const engine = createEngine();
       engineRef.current = engine;
+      const plan = botForRating(setup.botRating).plan;
       engineInitRef.current = engine.init({
-        threads: defaultThreads(),
+        // LimitStrength bands run ONE thread at the ruler movetime — the
+        // label scale was defined on a single-threaded reference at 400ms,
+        // and more threads at fixed movetime would play above scale.
+        threads: plan.kind === "limitStrength" ? 1 : defaultThreads(),
         hashMb: 64,
         variant: setup.variant,
+        limitStrengthElo: plan.kind === "limitStrength" ? plan.uciElo : undefined,
       });
       await engineInitRef.current;
       setEngineReady(true);

@@ -257,7 +257,7 @@ export function FriendsClient() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div>
+    <div className="mx-auto w-full max-w-5xl">
       <h1 className="mb-5 text-2xl font-bold text-paper">Friends &amp; challenges</h1>
       {children}
     </div>
@@ -267,12 +267,12 @@ function Shell({ children }: { children: React.ReactNode }) {
 function Row({ user, children }: { user: PublicUserPayload; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-edge py-1.5 last:border-0">
-      <span className="text-sm text-text">
+      <span className="min-w-0 truncate text-sm text-text">
         {user.title && <span className="notation mr-1 text-brilliant">{user.title}</span>}
         <span className="notation">{user.handle}</span>
         {user.displayName && <span className="ml-2 text-text-faint">{user.displayName}</span>}
       </span>
-      <span className="flex items-center gap-2">{children}</span>
+      <span className="flex shrink-0 items-center gap-2">{children}</span>
     </div>
   );
 }
@@ -415,7 +415,7 @@ function OpenChallengeForm({
         <select
           value={variant}
           onChange={(event) => setVariant(event.target.value as "standard" | "chess960")}
-          className="rounded border border-edge bg-field px-2 py-1 text-sm text-text"
+          className="text-sm"
           aria-label="Variant"
         >
           <option value="standard">Standard</option>
@@ -424,7 +424,7 @@ function OpenChallengeForm({
         <select
           value={timeControl}
           onChange={(event) => setTimeControl(event.target.value)}
-          className="notation rounded border border-edge bg-field px-2 py-1 text-sm text-text"
+          className="notation text-sm"
           aria-label="Time control"
         >
           {TIME_CONTROLS.map((option) => (
