@@ -148,6 +148,13 @@
       "when": 1787439402771,
       "tag": "0020_fix_puzzle_jsonb_encoding",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787697595730,
+      "tag": "0021_lock_public_api_surface",
+      "breakpoints": true
     }
   ]
 }

@@ -68,6 +68,29 @@ await expect("28 tables exist", async () => {
   if (result.rows[0].n !== 28) throw new Error(`expected 28 tables, found ${result.rows[0].n}`); // +explorer_agg (0015) +eval_cache (0017)
 });
 
+// Supabase advisor lockdown (0021): the data API is closed by construction —
+// every public table carries RLS (zero policies) and the API roles hold no
+// table privileges. A new table shipped without ENABLE ROW LEVEL SECURITY in
+// its migration fails HERE, before it can reopen the surface on prod.
+await expect("RLS enabled on every public table; API roles hold no grants", async () => {
+  const bare = await db.query(
+    `select c.relname from pg_class c
+     join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity
+     order by c.relname`
+  );
+  if (bare.rows.length > 0) {
+    throw new Error(`tables without RLS: ${bare.rows.map((row) => row.relname).join(", ")}`);
+  }
+  const grants = await db.query(
+    `select count(*)::int as n from information_schema.role_table_grants
+     where table_schema = 'public' and grantee in ('anon', 'authenticated')`
+  );
+  if (grants.rows[0].n !== 0) {
+    throw new Error(`${grants.rows[0].n} table grants remain for the API roles`);
+  }
+});
+
 // Anonymous-first: user row with no email.
 await expect("anonymous user (null email) inserts", () =>
   db.exec(
